@@ -4,9 +4,9 @@
  */
 public enum WeaponType {
     //          이름     HP   공격 방어 민첩 기술 | 성장: HP 공격 방어 민첩 기술
-    FOIL("플뢰레", 100, 10, 10, 12, 16, 8, 2, 2, 2, 3, "정확한 리포스트"),
-    EPEE("에페", 120, 12, 14, 8, 12, 10, 3, 3, 1, 2, "카운터 스톱히트"),
-    SABRE("사브르", 90, 15, 8, 16, 10, 7, 3, 1, 3, 2, "플레슈 돌격");
+    FOIL("플뢰레", 100, 11, 10, 12, 16, 8, 3, 2, 2, 3, "파라드-리포스트"),
+    EPEE("에페", 120, 12, 14, 9, 12, 10, 3, 3, 2, 2, "스톱히트"),
+    SABRE("사브르", 90, 14, 8, 14, 10, 7, 3, 1, 2, 2, "속공 런지");
 
     private final String displayName;
     private final int baseHp, baseAttack, baseDefense, baseAgility, baseTechnique;
@@ -38,6 +38,35 @@ public enum WeaponType {
                 || (this == SABRE && other == EPEE)
                 || (this == EPEE && other == FOIL);
         return win ? 1.25 : 0.8;
+    }
+
+    /** 종목별 전문 훈련: 해당 훈련의 효과가 20% 커진다. */
+    public boolean isFavored(TrainingType t) {
+        switch (this) {
+            case FOIL:  return t == TrainingType.BLADEWORK;
+            case EPEE:  return t == TrainingType.PARRY || t == TrainingType.ENDURANCE;
+            default:    return t == TrainingType.FOOTWORK || t == TrainingType.STRENGTH;
+        }
+    }
+
+    public String getStyleName() {
+        switch (this) {
+            case FOIL:  return "정밀 · 우선권형";
+            case EPEE:  return "전신 · 동시타형";
+            default:    return "속공 · 베기형";
+        }
+    }
+
+    /** 종목별 규칙 요약 (선수 관리 화면에 표시) */
+    public String getRuleSummary() {
+        switch (this) {
+            case FOIL:
+                return "몸통만 유효(밖을 맞히면 경기 중단) · 우선권 있음 · 찌르기 전용. 방어 후 리포스트와 페인트가 강력해요.";
+            case EPEE:
+                return "전신 유효 · 우선권 없음 · 동시에 맞으면 동시타(양쪽 득점). 반격(스톱히트)이 강력해요.";
+            default:
+                return "허리 위 유효 · 우선권 있음 · 베기와 찌르기. 속공이 빠르지만 방어와 후퇴가 약해요.";
+        }
     }
 
     @Override

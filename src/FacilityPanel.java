@@ -49,7 +49,7 @@ public class FacilityPanel extends ScreenPanel {
                 + "<br>훈련 효율 +" + (h * 5) + "%  |  "
                 + (h >= GameState.MAX_FACILITY_LEVEL ? "최대 레벨" : "다음 레벨 " + s.upgradeCost(h) + "G") + "</html>");
         clinicLabel.setText("<html><b>의무실</b> Lv." + c + "/" + GameState.MAX_FACILITY_LEVEL
-                + "<br>휴식 회복 +" + (c * 3) + ", 경기 후 부상 확률 -" + (c * 8) + "%p  |  "
+                + "<br>휴식 회복 +" + (c * 3) + ", 경기 후 부상 확률 -" + (c * 7) + "%p  |  "
                 + (c >= GameState.MAX_FACILITY_LEVEL ? "최대 레벨" : "다음 레벨 " + s.upgradeCost(c) + "G") + "</html>");
     }
 

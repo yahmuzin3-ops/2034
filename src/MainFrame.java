@@ -94,7 +94,7 @@ public class MainFrame extends JFrame {
     private void updateTopBar() {
         goldLabel.setText("재화 " + state.getGold() + "G");
         dayLabel.setText(state.getDay() + "일차");
-        weatherLabel.setText("날씨 " + state.getWeather().getDisplayName());
+        weatherLabel.setText("날씨 " + state.getWeather().getDisplayName() + " (내일 " + state.getForecast().getDisplayName() + ")");
     }
 
     private JPanel createSideMenu() {
@@ -106,7 +106,8 @@ public class MainFrame extends JFrame {
 
         String[][] menus = {
                 {"home", "홈"}, {"athletes", "선수 관리"}, {"training", "훈련"}, {"shop", "상점"},
-                {"inventory", "인벤토리"}, {"match", "경기 · 대회"}, {"facility", "시설"}, {"goals", "목표 · 업적"},
+                {"inventory", "인벤토리"}, {"match", "경기 · 대회"}, {"facility", "시설"}, {"goals", "목표 · 의뢰"},
+                {"history", "경기 기록"},
         };
         for (String[] m : menus) {
             side.add(createNavButton(m[0], m[1]));
@@ -160,6 +161,7 @@ public class MainFrame extends JFrame {
         addScreen("match", new MatchPanel(this));
         addScreen("facility", new FacilityPanel(this));
         addScreen("goals", new GoalPanel(this));
+        addScreen("history", new HistoryPanel(this));
     }
 
     private void addScreen(String key, ScreenPanel panel) {

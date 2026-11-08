@@ -1,15 +1,15 @@
 public class FencerTest {
     public static void main(String[] args) {
-        Fencer f = new Fencer("그룹", WeaponType.EPEE, Personality.PASSIONATE);
+        Fencer f = new Fencer("아델", WeaponType.SABRE, Personality.PASSIONATE);
         System.out.println("생성: " + f);
 
         // 컨디션 좋을 때 훈련 (풋워크 훈련: 민첩 +3, 공격 +1, 피로 +15)
-        double eff = f.applyTraining(1, 10, 3, 0, 10);
+        double eff = f.applyTraining(1, 0, 3, 0, 15);
         System.out.printf("훈련1 효율 %.2f -> %s%n", eff, f);
 
         // 피로를 쌓아서 훈련 효율이 떨어지는지 확인
         for (int i = 0; i < 4; i++) {
-            eff = f.applyTraining(1, 20, 40, 2, 15);
+            eff = f.applyTraining(1, 0, 3, 0, 15);
         }
         System.out.printf("훈련 5회 후 효율 %.2f -> %s%n", eff, f);
 

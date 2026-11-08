@@ -60,7 +60,19 @@ public class TrainingPanel extends ScreenPanel {
         status.setText("<html>현재 훈련 효율 <b>" + Math.round(eff * 100) + "%</b> &nbsp;(날씨 "
                 + state().getWeather().getDisplayName() + ", 훈련장 Lv." + state().getTrainingHallLevel() + ")<br>"
                 + "피로 " + f.getFatigue() + " / 배고픔 " + f.getHunger() + " / 기분 " + f.getMood()
-                + (f.isInjured() ? " / <font color='red'>부상 중</font>" : "") + "</html>");
+                + (f.isInjured() ? " / <font color='red'>부상 중</font>" : "")
+                + "<br>" + f.getWeapon().getDisplayName() + " 전문 훈련(효과 +20%): " + favoredNames(f) + "</html>");
+    }
+
+    private static String favoredNames(Fencer f) {
+        StringBuilder sb = new StringBuilder();
+        for (TrainingType t : TrainingType.values()) {
+            if (f.getWeapon().isFavored(t)) {
+                if (sb.length() > 0) sb.append(", ");
+                sb.append(t.getDisplayName());
+            }
+        }
+        return sb.toString();
     }
 
     @Override

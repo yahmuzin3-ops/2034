@@ -23,7 +23,7 @@ public enum TrainingType {
     /** 오르는 능력치 설명 (자동 생성) */
     public String getDescription() {
         StringBuilder sb = new StringBuilder();
-        if (hp != 0) sb.append("최대HP +").append(hp).append("  ");
+        if (hp != 0) sb.append("최대 체력 +").append(hp).append("  ");
         if (atk != 0) sb.append("공격 +").append(atk).append("  ");
         if (def != 0) sb.append("방어 +").append(def).append("  ");
         if (agi != 0) sb.append("민첩 +").append(agi).append("  ");

@@ -60,7 +60,9 @@ public class GameEngine {
 
     public void advanceDay() {
         state.nextDay();
-        GameLog.post("[시간] " + state.getDay() + "일차 - 날씨: " + state.getWeather().getDisplayName());
+Weather w = state.getWeather();
+        GameLog.post("[시간] " + state.getDay() + "일차 - 날씨: " + w.getDisplayName() + " (" + w.getDayNote() + ")");
+        GameLog.post("[날씨] 내일 예보: " + state.getForecast().getDisplayName());
         for (String m : EventManager.rollDaily(state)) GameLog.post(m);
     }
 
@@ -92,8 +94,11 @@ public class GameEngine {
     private void act(Fencer f) {
         Personality p = f.getPersonality();
         String n = f.getName();
+        Weather w = state.getWeather();
+        int restThreshold = p.getRestThreshold() - (w == Weather.HOT ? 10 : 0);   // 무더위에는 더 빨리 지친다
+        double practiceChance = w == Weather.RAINY ? 0.2 : w == Weather.SUNNY ? 0.65 : 0.5;   // 비 오면 연습이 줄어든다
 
-        if (f.getHp() < f.getMaxHp() * 0.3 || f.isInjured() || f.getFatigue() >= p.getRestThreshold()) {
+        if (f.getHp() < f.getMaxHp() * 0.3 || f.isInjured() || f.getFatigue() >= restThreshold) {
             f.rest(state.getRestBonus());
             if (f.isInjured() && rnd.nextDouble() < 0.15) {
                 f.cure();
@@ -111,7 +116,7 @@ public class GameEngine {
         } else if (f.getMood() < 30) {
             f.play();
             GameLog.post("[자율] " + n + "이(가) 기분 전환으로 놀고 있어요.");
-        } else if (f.getMood() >= p.getPracticeMood() && f.getFatigue() < 40 && rnd.nextDouble() < 0.5) {
+        } else if (f.getMood() >= p.getPracticeMood() && f.getFatigue() < 40 && rnd.nextDouble() < practiceChance) {
             f.selfPractice();
             GameLog.post("[자율] " + n + "이(가) 개인 연습을 해요. (경험치 +3)");
         }

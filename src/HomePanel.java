@@ -6,6 +6,7 @@ public class HomePanel extends ScreenPanel {
     private final JLabel summary = new JLabel(" ");
     private final JTextArea logArea = UI.logArea();
     private final JCheckBox autoCheck = new JCheckBox("시간 자동 흐름");
+    private final JCheckBox soundCheck = new JCheckBox("효과음");
 
     public HomePanel(MainFrame frame) {
         super(frame, "홈");
@@ -20,6 +21,10 @@ public class HomePanel extends ScreenPanel {
         autoCheck.addActionListener(e -> frame.getEngine().setAutoDay(autoCheck.isSelected()));
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
         right.setOpaque(false);
+        soundCheck.setOpaque(false);
+        soundCheck.setSelected(Sfx.isEnabled());
+        soundCheck.addActionListener(e -> Sfx.setEnabled(soundCheck.isSelected()));
+        right.add(soundCheck);
         right.add(autoCheck);
         right.add(next);
         top.add(right, BorderLayout.EAST);
@@ -42,6 +47,9 @@ public class HomePanel extends ScreenPanel {
         summary.setText("<html>보유 선수 <b>" + s.getRoster().size() + "</b>명 &nbsp;|&nbsp; 승리 <b>"
                 + s.getWins() + "</b>회 (" + s.getMatches() + "전) &nbsp;|&nbsp; 날씨 <b>"
                 + s.getWeather().getDisplayName() + "</b><br><br>"
+                + "<b>오늘의 날씨 효과</b>: " + s.getWeather().getDayNote() + "<br>"
+                + "<b>경기 영향</b>: " + s.getWeather().getBattleNote() + "<br>"
+                + "<b>내일 예보</b>: " + s.getForecast().getDisplayName() + "<br><br>"
                 + "왼쪽 메뉴에서 훈련, 상점, 경기를 이용해보세요.<br>"
                 + "선수들은 스스로 쉬고, 먹고, 연습해요. "
                 + (frame.getEngine().isAutoDay() ? "(" + GameEngine.DAY_MILLIS / 1000 + "초 = 하루)"

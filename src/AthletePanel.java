@@ -10,6 +10,8 @@ public class AthletePanel extends ScreenPanel {
     private final JLabel infoLabel = new JLabel(" ");
     private final JLabel statLabel = new JLabel(" ");
     private final JLabel skillLabel = new JLabel(" ");
+    private final JLabel ruleLabel = new JLabel(" ");
+    private final JLabel gearLabel = new JLabel(" ");
     private final JLabel stateLabel = new JLabel(" ");
     private final JProgressBar expBar = UI.bar(new Color(90, 140, 220));
     private final JProgressBar hpBar = UI.bar(new Color(220, 80, 80));
@@ -31,7 +33,7 @@ public class AthletePanel extends ScreenPanel {
         detail.setLayout(new BoxLayout(detail, BoxLayout.Y_AXIS));
         detail.setOpaque(false);
         nameLabel.setFont(nameLabel.getFont().deriveFont(Font.BOLD, 22f));
-        for (JLabel l : new JLabel[]{nameLabel, infoLabel, statLabel, skillLabel, stateLabel}) {
+        for (JLabel l : new JLabel[]{nameLabel, infoLabel, statLabel, skillLabel, ruleLabel, gearLabel, stateLabel}) {
             l.setAlignmentX(Component.LEFT_ALIGNMENT);
             detail.add(l);
             detail.add(Box.createVerticalStrut(6));
@@ -44,12 +46,15 @@ public class AthletePanel extends ScreenPanel {
 
         JButton rest = UI.button("휴식시키기");
         rest.addActionListener(e -> rest());
+        JButton unequip = UI.button("장비 해제");
+        unequip.addActionListener(e -> unequip());
         JButton recruit = UI.button("선수 영입");
         recruit.addActionListener(e -> recruit());
         JPanel btns = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
         btns.setOpaque(false);
         btns.setAlignmentX(Component.LEFT_ALIGNMENT);
         btns.add(rest);
+        btns.add(unequip);
         btns.add(recruit);
         detail.add(Box.createVerticalStrut(14));
         detail.add(btns);
@@ -77,6 +82,23 @@ public class AthletePanel extends ScreenPanel {
         }
         f.rest(state().getRestBonus());
         GameLog.post("[관리] " + f.getName() + "을(를) 쉬게 했어요. (피로 감소, HP 회복)");
+        updateDetail();
+    }
+
+    private void unequip() {
+        Fencer f = list.getSelectedValue();
+        if (f == null) return;
+        java.util.List<EquipSlot> worn = new java.util.ArrayList<>();
+        for (EquipSlot s : EquipSlot.values()) if (f.getGear(s) != null) worn.add(s);
+        if (worn.isEmpty()) {
+            JOptionPane.showMessageDialog(this, f.getName() + "은(는) 장착한 장비가 없어요.");
+            return;
+        }
+        EquipSlot slot = (EquipSlot) JOptionPane.showInputDialog(this, "벗을 장비의 부위를 선택하세요.", "장비 해제",
+                JOptionPane.QUESTION_MESSAGE, null, worn.toArray(), worn.get(0));
+        if (slot == null) return;
+        String msg = state().unequip(f, slot);
+        GameLog.post("[장비] " + msg);
         updateDetail();
     }
 
@@ -124,7 +146,15 @@ public class AthletePanel extends ScreenPanel {
                 + " · " + f.getGrade().getDisplayName() + " · Lv." + f.getLevel());
         statLabel.setText("공격 " + f.getAttack() + "   방어 " + f.getDefense()
                 + "   민첩 " + f.getAgility() + "   기술 " + f.getTechnique());
-        skillLabel.setText("특수 기술: " + f.getWeapon().getSpecialSkill());
+        skillLabel.setText("주특기: " + f.getWeapon().getSpecialSkill());
+        StringBuilder gear = new StringBuilder("<html><b>장비</b>: ");
+        for (EquipSlot s : EquipSlot.values()) {
+            Equipment g = f.getGear(s);
+            gear.append(s).append(" ").append(g == null ? "-" : g.getName()).append(s == EquipSlot.JACKET ? "" : " / ");
+        }
+        gearLabel.setText(gear.append("</html>").toString());
+        ruleLabel.setText("<html><body style='width:420px'><b>" + f.getWeapon().getDisplayName() + " ("
+                + f.getWeapon().getStyleName() + ")</b><br>" + f.getWeapon().getRuleSummary() + "</body></html>");
         stateLabel.setText(f.isBusy() ? "시합 중" : f.isInjured() ? "부상 중 (치료 아이템이나 휴식이 필요해요)" : "컨디션 양호");
         UI.setBar(expBar, f.getExp(), f.expToNext());
         UI.setBar(hpBar, f.getHp(), f.getMaxHp());

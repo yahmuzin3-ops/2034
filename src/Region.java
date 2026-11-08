@@ -34,13 +34,13 @@ public enum Region {
         return wins >= requiredWins;
     }
 
-    /** 적 팀 생성: 종목/성향은 랜덤, 레벨은 지역 범위 안에서 랜덤 */
-    public List<Fencer> createEnemies(int size) {
+    /** 적 팀 생성: 종목을 지정하면 모두 그 종목 (종목별 대회), null 이면 종목은 랜덤 */
+    public List<Fencer> createEnemies(int size, WeaponType weapon) {
         List<String> names = new ArrayList<>(NAMES);
         Collections.shuffle(names);
         List<Fencer> list = new ArrayList<>();
         for (int i = 0; i < size; i++) {
-            WeaponType w = WeaponType.values()[R.nextInt(WeaponType.values().length)];
+            WeaponType w = weapon != null ? weapon : WeaponType.values()[R.nextInt(WeaponType.values().length)];
             Personality p = Personality.values()[R.nextInt(Personality.values().length)];
             Fencer f = new Fencer(names.get(i), w, p);
             int target = minLevel + R.nextInt(maxLevel - minLevel + 1);
@@ -52,12 +52,16 @@ public enum Region {
         return list;
     }
 
-    /** 결승전(보스전) 상대: 최대 레벨 +4, 최대 HP 4배의 챔피언 1명 */
-    public List<Fencer> createBoss() {
-        WeaponType w = WeaponType.values()[R.nextInt(WeaponType.values().length)];
+    public List<Fencer> createEnemies(int size) {
+        return createEnemies(size, null);
+    }
+
+    /** 결승전(보스전) 상대: 최대 레벨 +8, 최대 HP(체력) 4배의 챔피언 1명 (종목 지정 가능) */
+    public List<Fencer> createBoss(WeaponType weapon) {
+        WeaponType w = weapon != null ? weapon : WeaponType.values()[R.nextInt(WeaponType.values().length)];
         Personality p = Personality.values()[R.nextInt(Personality.values().length)];
         Fencer f = new Fencer("챔피언 " + NAMES.get(R.nextInt(NAMES.size())), w, p);
-        int target = maxLevel + 4;
+        int target = maxLevel + 8;
         while (f.getLevel() < target) {
             f.gainExp(f.expToNext());
         }
@@ -65,6 +69,10 @@ public enum Region {
         List<Fencer> list = new ArrayList<>();
         list.add(f);
         return list;
+    }
+
+    public List<Fencer> createBoss() {
+        return createBoss(null);
     }
 
     public String getDisplayName() { return displayName; }

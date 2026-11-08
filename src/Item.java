@@ -22,6 +22,11 @@ public abstract class Item implements Serializable {
     /** 대상 선수에게 아이템 효과 적용. 결과 메시지를 반환 */
     public abstract String use(Fencer target);
 
+    /** 사용할 수 없는 이유 (사용 가능하면 null). 사용하기 전에 확인해서 아이템이 사라지지 않게 한다. */
+    public String cannotUse(Fencer target) {
+        return null;
+    }
+
     /** 종류 표시용 이름 (상점/인벤토리 화면에서 사용) */
     public abstract String getTypeName();
 

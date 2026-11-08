@@ -15,12 +15,12 @@ public final class EventManager {
         List<Fencer> roster = s.getRoster();
         if (roster.isEmpty()) return out;
 
-        Weather w = s.getWeather();
-        if (w.getTrainingModifier() < 1.0) {
-            out.add("[날씨] " + w.getDisplayName() + " - 오늘은 훈련 효율이 떨어져요.");
-        }
-
         Fencer target = roster.get(RND.nextInt(roster.size()));
+        if (s.getWeather() == Weather.HOT && !target.isBusy() && RND.nextDouble() < 0.25) {
+            target.addFatigue(20);
+            out.add("[이벤트] 무더위에 " + target.getName() + "이(가) 더위를 먹어 피로가 쌓였어요. (열사병 주의)");
+            return out;
+        }
         double r = RND.nextDouble();
         if (r < 0.12 && !target.isBusy()) {
             target.injure();

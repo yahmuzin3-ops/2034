@@ -1,6 +1,8 @@
 import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
+import java.util.EnumMap;
+import java.util.function.ToIntFunction;
 
 /**
  * 펜서(선수) 모델.
@@ -30,6 +32,9 @@ public class Fencer implements Serializable {
     private int fatigue = 0;
     private int mood = 70;
     private boolean injured = false;
+
+    // 장착한 장비 (부위마다 1개). 예전 저장 파일에는 없을 수 있다.
+    private EnumMap<EquipSlot, Equipment> gear;
 
     // 시합 중에는 자율 행동을 하지 않는다 (저장하지 않음)
     private transient volatile boolean busy = false;
@@ -211,14 +216,45 @@ public class Fencer implements Serializable {
     public synchronized Grade getGrade() { return Grade.fromLevel(level); }
     public synchronized int getHp() { return hp; }
     public synchronized int getMaxHp() { return maxHp; }
-    public synchronized int getAttack() { return attack; }
-    public synchronized int getDefense() { return defense; }
-    public synchronized int getAgility() { return agility; }
-    public synchronized int getTechnique() { return technique; }
+    // 능력치 = 기본 능력치 + 장착한 장비의 보너스
+    public synchronized int getAttack() { return attack + gearSum(Equipment::getAtk); }
+    public synchronized int getDefense() { return defense + gearSum(Equipment::getDef); }
+    public synchronized int getAgility() { return agility + gearSum(Equipment::getAgi); }
+    public synchronized int getTechnique() { return technique + gearSum(Equipment::getTec); }
     public synchronized int getHunger() { return hunger; }
     public synchronized int getFatigue() { return fatigue; }
     public synchronized int getMood() { return mood; }
     public synchronized boolean isInjured() { return injured; }
+
+    // ---------- 장비 ----------
+
+    /** 장비를 장착하고, 그 부위에 끼고 있던 이전 장비를 돌려준다. */
+    public synchronized Equipment equip(Equipment e) {
+        if (gear == null) gear = new EnumMap<>(EquipSlot.class);
+        return gear.put(e.getSlot(), e);
+    }
+
+    public synchronized Equipment unequip(EquipSlot slot) {
+        return gear == null ? null : gear.remove(slot);
+    }
+
+    public synchronized Equipment getGear(EquipSlot slot) {
+        return gear == null ? null : gear.get(slot);
+    }
+
+    /** 장착한 장비 중에 해당 특수 효과가 있는지 */
+    public synchronized boolean hasTag(GearTag tag) {
+        if (gear == null) return false;
+        for (Equipment e : gear.values()) if (e.getTag() == tag) return true;
+        return false;
+    }
+
+    private int gearSum(ToIntFunction<Equipment> f) {
+        if (gear == null) return 0;
+        int sum = 0;
+        for (Equipment e : gear.values()) sum += f.applyAsInt(e);
+        return sum;
+    }
 
     private static int clamp(int v) {
         return Math.max(0, Math.min(100, v));
