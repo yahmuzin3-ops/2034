@@ -7,6 +7,8 @@ public enum TrainingType {
     PARRY("파라드(방어) 훈련",         0, 0, 3, 1, 1, 15),
     ENDURANCE("지구력 훈련",           8, 0, 1, 0, 0, 20);
 
+    public static final int MAX_LEVEL = 10;
+
     private final String displayName;
     private final int hp, atk, def, agi, tec, fatigueCost;
 

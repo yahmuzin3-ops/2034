@@ -4,21 +4,22 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * 백그라운드 스레드 관리.
- *  - 선수마다 스레드 1개: 상태를 보고 휴식 / 먹이 탐색 / 놀이 / 개인 연습을 스스로 결정
+ *  - 선수마다 스레드 1개: 훈련 완료, 휴식 회복, 부상 중 피로도를 갱신
  *  - 시계 스레드 1개: 일정 시간마다 하루 경과 + 날씨 변화 + 확률 이벤트
  * 공유 데이터는 Fencer / GameState / Inventory 의 synchronized 로 보호된다.
  */
 public class GameEngine {
     public static final long DAY_MILLIS = 20_000;
     public static final long WORKER_MILLIS = 3_000;
+    public static final long AUTO_COOLDOWN_MILLIS = 8_000;   // 자율 행동 사이의 최소 간격
 
     private final GameState state;
     private final Map<Fencer, Thread> workers = new ConcurrentHashMap<>();
-    private final Random rnd = new Random();
     private volatile boolean running = false;
     private volatile boolean paused = false;    // 경기 중에는 시간이 멈춘다
     private volatile boolean autoDay = true;    // false 면 "하루 넘기기" 버튼으로만 시간이 흐른다
     private Thread clock;
+    private final Random rnd = new Random();
 
     public GameEngine(GameState state) {
         this.state = state;
@@ -53,6 +54,13 @@ public class GameEngine {
         }
     }
 
+    /** 방출된 선수의 작업 스레드를 종료한다. */
+    public void removeWorker(Fencer f) {
+        if (f == null) return;
+        Thread worker = workers.remove(f);
+        if (worker != null) worker.interrupt();
+    }
+
     public void setPaused(boolean paused) { this.paused = paused; }
     public boolean isPaused() { return paused; }
     public void setAutoDay(boolean autoDay) { this.autoDay = autoDay; }
@@ -60,7 +68,7 @@ public class GameEngine {
 
     public void advanceDay() {
         state.nextDay();
-Weather w = state.getWeather();
+        Weather w = state.getWeather();
         GameLog.post("[시간] " + state.getDay() + "일차 - 날씨: " + w.getDisplayName() + " (" + w.getDayNote() + ")");
         GameLog.post("[날씨] 내일 예보: " + state.getForecast().getDisplayName());
         for (String m : EventManager.rollDaily(state)) GameLog.post(m);
@@ -85,40 +93,72 @@ Weather w = state.getWeather();
                 return;
             }
             if (!running) return;
-            if (f.isBusy()) continue; // 시합 중
-            act(f);
+            if (!state.getRoster().contains(f)) {
+                workers.remove(f, Thread.currentThread());
+                return;
+            }
+            Fencer.TrainingSession session = f.finishTrainingIfDue(System.currentTimeMillis());
+            if (session != null) {
+                GameLog.post("[훈련 완료] " + state.completeTraining(f, session));
+            }
+            if (f.processWorkerTick(state.getRestBonus())) {
+                announce(f, f.getName() + "이(가) 충분히 쉬고 다시 몸을 풀었어요.");
+            }
+            autonomy(f);
         }
     }
 
-    /** 조건문 기반 자율 행동. 성향(Personality)에 따라 기준값이 다르다. */
-    private void act(Fencer f) {
-        Personality p = f.getPersonality();
-        String n = f.getName();
-        Weather w = state.getWeather();
-        int restThreshold = p.getRestThreshold() - (w == Weather.HOT ? 10 : 0);   // 무더위에는 더 빨리 지친다
-        double practiceChance = w == Weather.RAINY ? 0.2 : w == Weather.SUNNY ? 0.65 : 0.5;   // 비 오면 연습이 줄어든다
-
-        if (f.getHp() < f.getMaxHp() * 0.3 || f.isInjured() || f.getFatigue() >= restThreshold) {
-            f.rest(state.getRestBonus());
-            if (f.isInjured() && rnd.nextDouble() < 0.15) {
-                f.cure();
-                GameLog.post("[자율] " + n + "의 부상이 자연스럽게 나았어요.");
-            } else {
-                GameLog.post("[자율] " + n + "이(가) 스스로 휴식을 취해요.");
+    /**
+     * 자율 행동: 훈련 / 시합 / 휴식 중이 아닌 선수는 스스로 상태를 보고 행동한다.
+     * (휴식 -> 식사 -> 기분 전환 -> 섀도 펜싱 순서로 조건을 검사한다. 규칙은 Fencer.decideAutoAction)
+     */
+    private void autonomy(Fencer f) {
+        long now = System.currentTimeMillis();
+        if (!f.isAutoEnabled() || now < f.getNextAutoAt()) return;
+        Fencer.AutoAction action = f.decideAutoAction(rnd);
+        long cooldown = AUTO_COOLDOWN_MILLIS;
+        switch (action) {
+            case REST:
+                announce(f, f.getName() + "이(가) 스트레칭을 하며 휴식을 시작했어요.");
+                break;
+            case MEAL: {
+                String meal = autoMeal(f);
+                if (meal == null) {
+                    announce(f, f.getName() + "이(가) 배가 고프지만 먹을 음식이 없어요. (상점에서 식단을 사주세요)");
+                    cooldown = 30_000;
+                } else {
+                    announce(f, meal);
+                }
+                break;
             }
-        } else if (f.getHunger() >= 60) {
-            if (rnd.nextDouble() < 0.7) {
-                f.eat(15, 1);
-                GameLog.post("[자율] " + n + "이(가) 먹이를 찾아 먹었어요.");
-            } else {
-                GameLog.post("[자율] " + n + "이(가) 먹이를 찾지 못했어요...");
-            }
-        } else if (f.getMood() < 30) {
-            f.play();
-            GameLog.post("[자율] " + n + "이(가) 기분 전환으로 놀고 있어요.");
-        } else if (f.getMood() >= p.getPracticeMood() && f.getFatigue() < 40 && rnd.nextDouble() < practiceChance) {
-            f.selfPractice();
-            GameLog.post("[자율] " + n + "이(가) 개인 연습을 해요. (경험치 +3)");
+            case REFRESH:
+                f.play();
+                announce(f, f.getName() + "이(가) 경기 영상을 보며 기분 전환을 했어요.");
+                break;
+            case SHADOW:
+                f.selfPractice();
+                announce(f, f.getName() + "이(가) 거울 앞에서 섀도 펜싱을 했어요.");
+                break;
+            default:
+                return;
         }
+        f.setNextAutoAt(now + cooldown);
+    }
+
+    /** 인벤토리에서 가장 싼 음식을 하나 먹는다. 음식이 없으면 null (락 순서: GameState -> Inventory / Fencer) */
+    private String autoMeal(Fencer f) {
+        synchronized (state) {
+            Food pick = null;
+            for (Item it : state.getInventory().snapshot().keySet()) {
+                if (it instanceof Food && (pick == null || it.getPrice() < pick.getPrice())) pick = (Food) it;
+            }
+            if (pick == null || !state.getInventory().remove(pick, 1)) return null;
+            return pick.use(f);
+        }
+    }
+
+    private void announce(Fencer f, String message) {
+        f.setLastAuto(message);
+        GameLog.post("[자율] " + message);
     }
 }

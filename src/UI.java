@@ -90,6 +90,27 @@ public final class UI {
         return t;
     }
 
+    /** 표의 해당 열에 아이콘(Icon 객체)을 그리도록 한다. */
+    public static void iconColumn(JTable t, int col) {
+        t.setRowHeight(54);
+        javax.swing.table.TableColumn c = t.getColumnModel().getColumn(col);
+        c.setMinWidth(64);
+        c.setMaxWidth(64);
+        c.setCellRenderer(new javax.swing.table.DefaultTableCellRenderer() {
+            {
+                setHorizontalAlignment(CENTER);
+            }
+
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean selected,
+                                                           boolean focus, int row, int column) {
+                super.getTableCellRendererComponent(table, null, selected, focus, row, column);
+                setIcon(value instanceof Icon ? (Icon) value : null);
+                return this;
+            }
+        });
+    }
+
     public static DefaultTableModel model(JTable t) {
         return (DefaultTableModel) t.getModel();
     }

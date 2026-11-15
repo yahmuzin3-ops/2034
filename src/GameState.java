@@ -117,6 +117,17 @@ public class GameState implements Serializable {
         return f;
     }
 
+    /** 선수 방출. 마지막 선수와 시합/훈련 중인 선수는 방출할 수 없다. */
+    public synchronized String releaseFencer(Fencer f) {
+        if (f == null || !roster.contains(f)) return "방출할 선수를 찾을 수 없어요.";
+        if (roster.size() <= 1) return "마지막 선수는 방출할 수 없어요. 먼저 다른 선수를 영입해주세요.";
+        if (f.isBusy()) return f.getName() + "은(는) 시합 중이라 방출할 수 없어요.";
+        if (f.isTraining()) return f.getName() + "은(는) 훈련 중이라 방출할 수 없어요.";
+        f.stopRest();
+        roster.remove(f);
+        return f.getName() + " 선수를 방출했어요.";
+    }
+
     // ---------- 아이템 ----------
 
     public Inventory getInventory() { return inventory; }
@@ -155,24 +166,99 @@ public class GameState implements Serializable {
         return weather.getTrainingModifier() * (1 + 0.05 * trainingHallLevel);
     }
 
+    public long getTrainingDurationMinutes(Fencer f) {
+        return f == null ? 0 : Math.max(1, f.getLevel()) * 5L;
+    }
+
+    /** 즉시 완료 비용은 훈련 시간의 5분 단위마다 100G다. */
+    public int getInstantTrainingCost(Fencer f) {
+        return f == null ? 0 : Math.max(1, f.getLevel()) * 100;
+    }
+
     public String train(Fencer f, TrainingType t) {
+        if (f == null || t == null) return "선수와 훈련 종류를 선택해주세요.";
         if (f.isBusy()) return f.getName() + "은(는) 지금 시합 중이에요.";
+        if (f.isTraining()) return f.getName() + "은(는) 이미 훈련 중이에요.";
+        if (f.isResting()) return f.getName() + "은(는) 휴식 중이라 훈련할 수 없어요.";
+        if (f.isDown()) return f.getName() + "은(는) HP가 없어 훈련할 수 없어요. 먼저 회복이 필요해요.";
         if (f.getFatigue() >= 95) return f.getName() + "은(는) 너무 지쳐서 훈련할 수 없어요. 휴식이 필요해요.";
 
-        int h0 = f.getMaxHp(), a0 = f.getAttack(), d0 = f.getDefense(), g0 = f.getAgility(), t0 = f.getTechnique();
-        boolean favored = f.getWeapon().isFavored(t);   // 종목 전문 훈련은 효과 +20%
-        double eff = f.applyTraining(t.getHp(), t.getAtk(), t.getDef(), t.getAgi(), t.getTec(),
-                t.getFatigueCost(), getTrainingMultiplier() * (favored ? 1.2 : 1.0));
+        long durationMinutes = getTrainingDurationMinutes(f);
+        double efficiency = f.getTrainingEfficiency() * getTrainingMultiplier()
+                * (f.getWeapon().isFavored(t) ? 1.2 : 1.0);
+        if (!f.startTraining(t, durationMinutes * 60_000L, efficiency)) {
+            return f.getName() + "은(는) 다른 활동 중이라 훈련을 시작할 수 없어요.";
+        }
+        return f.getName() + " - " + t.getDisplayName() + " 훈련을 시작했어요. 예상 시간: "
+                + durationMinutes + "분";
+    }
 
+    /** 시간이 끝난 훈련의 효과를 적용한다. */
+    public String completeTraining(Fencer f, Fencer.TrainingSession session) {
+        if (f == null || session == null) return "훈련 완료 정보를 찾지 못했어요.";
+        int oldLevel = f.getLevel();
+        Grade oldGrade = f.getGrade();
+        TrainingType type = session.getType();
+        int oldTrainingLevel = f.getTrainingLevel(type);
+        int hp0 = f.getMaxHp(), atk0 = f.getAttack(), def0 = f.getDefense();
+        int agi0 = f.getAgility(), tec0 = f.getTechnique();
+        double efficiency = f.applyTrainingAtEfficiency(type.getHp(), type.getAtk(), type.getDef(),
+                type.getAgi(), type.getTec(), type.getFatigueCost(), session.getEfficiency());
+        int newTrainingLevel = f.increaseTrainingLevel(type);
         progressMissions(Mission.Type.TRAIN, null, 1);
-        StringBuilder sb = new StringBuilder();
-        sb.append(f.getName()).append(" - ").append(t.getDisplayName())
-                .append(String.format(" 완료 (효율 %d%%)", Math.round(eff * 100)))
-                .append(favored ? " [전문 훈련]" : "");
-        String gain = gainText(f.getMaxHp() - h0, f.getAttack() - a0, f.getDefense() - d0,
-                f.getAgility() - g0, f.getTechnique() - t0);
-        sb.append(gain.isEmpty() ? " | 효율이 낮아 능력치는 오르지 않았어요" : " | " + gain);
-        return sb.toString();
+
+        StringBuilder message = new StringBuilder();
+        message.append(f.getName()).append(" - ").append(type.getDisplayName())
+                .append(String.format(" 완료 (효율 %d%%)", Math.round(efficiency * 100)))
+                .append(f.getWeapon().isFavored(type) ? " [전문 훈련]" : "");
+        String gain = gainText(f.getMaxHp() - hp0, f.getAttack() - atk0, f.getDefense() - def0,
+                f.getAgility() - agi0, f.getTechnique() - tec0);
+        message.append(gain.isEmpty() ? " | 효율이 낮아 능력치는 오르지 않았어요" : " | " + gain);
+        if (newTrainingLevel > oldTrainingLevel) {
+            message.append("\n").append(type.getDisplayName()).append(" 숙련 레벨 상승! Lv.")
+                    .append(oldTrainingLevel).append(" → Lv.").append(newTrainingLevel);
+        }
+        String progression = progressionNotice(f, oldLevel, oldGrade);
+        if (!progression.isEmpty()) message.append("\n").append(progression);
+        return message.toString();
+    }
+
+    public String finishTrainingImmediately(Fencer f) {
+        if (f == null) return "선수를 선택해주세요.";
+        synchronized (this) {
+            synchronized (f) {
+                if (f.isBusy()) return f.getName() + "은(는) 지금 시합 중이에요.";
+                if (!f.isTraining()) return "즉시 완료할 훈련이 없어요.";
+                int cost = getInstantTrainingCost(f);
+                boolean alreadyDue = f.getTrainingRemainingMillis() == 0;
+                if (!alreadyDue && !spendGold(cost)) return "재화가 모자라요. 즉시 완료에는 " + cost + "G가 필요해요.";
+                Fencer.TrainingSession session = alreadyDue
+                        ? f.finishTrainingIfDue(System.currentTimeMillis()) : f.finishTrainingImmediately();
+                if (session == null) {
+                    if (!alreadyDue) addGold(cost);
+                    return "훈련을 완료하지 못했어요. 다시 시도해주세요.";
+                }
+                String completed = completeTraining(f, session);
+                return (alreadyDue ? "훈련 시간이 끝나 비용 없이 완료했어요.\n"
+                        : "즉시 완료 비용: -" + cost + "G\n") + completed;
+            }
+        }
+    }
+
+    public static String progressionNotice(Fencer f, int oldLevel, Grade oldGrade) {
+        if (f == null) return "";
+        int newLevel = f.getLevel();
+        Grade newGrade = f.getGrade();
+        StringBuilder message = new StringBuilder();
+        if (newLevel > oldLevel) {
+            message.append(f.getName()).append(" 레벨 상승! Lv.").append(oldLevel).append(" → Lv.").append(newLevel);
+        }
+        if (oldGrade != newGrade) {
+            if (message.length() > 0) message.append("\n");
+            message.append(f.getName()).append(" 등급 상승! ").append(oldGrade.getDisplayName())
+                    .append(" → ").append(newGrade.getDisplayName());
+        }
+        return message.toString();
     }
 
     private static String gainText(int hp, int atk, int def, int agi, int tec) {

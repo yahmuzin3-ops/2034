@@ -1,41 +1,47 @@
 import java.util.List;
 
-/** 상점에서 파는 아이템 목록. 아이템을 추가하고 싶으면 여기에만 한 줄 추가하면 돼요. */
+/** 상점 아이템 목록. 장비 능력치는 장착 중에만 적용된다. */
 public final class ItemCatalog {
-    private ItemCatalog() {
-    }
+    private ItemCatalog() { }
 
     public static final List<Item> ALL = List.of(
-            // 식단 (이름, 가격, 설명, 영양, 기분)
+            // 식단
             new Food("에너지바", 30, "간단히 허기를 달래요", 20, 2),
             new Food("프로틴 쉐이크", 50, "운동 후 든든하게", 30, 3),
             new Food("닭가슴살 도시락", 60, "배도 채우고 기분도 좋아져요", 40, 5),
 
-            // 회복 (이름, 가격, 설명, 회복량, 부상 치료)
+            // 회복
             new Medicine("파스", 40, "HP를 조금 회복해요", 30, false),
-            new Medicine("구급 키트", 120, "HP 회복 + 부상 치료", 60, true),
+            new Medicine("구급 키트", 120, "HP 회복과 부상 치료", 60, true),
             new Medicine("물리치료 쿠폰", 100, "부상을 치료해요", 0, true),
 
-            // 장비 (이름, 가격, 설명, 부위, 전용 종목, 특수 효과, 공격, 방어, 민첩, 기술)
-            new Equipment("카본 블레이드", 250, "가볍고 단단한 범용 검",
-                    EquipSlot.BLADE, null, null, 2, 0, 0, 1),
-            new Equipment("정밀 플뢰레 블레이드", 320, "칼끝이 정확해요",
-                    EquipSlot.BLADE, WeaponType.FOIL, null, 0, 0, 0, 4),
-            new Equipment("강화 에페 벨가드", 320, "막아내기 좋아요",
-                    EquipSlot.BLADE, WeaponType.EPEE, null, 0, 4, 0, 0),
-            new Equipment("경량 사브르 블레이드", 320, "휘두르기 가벼워요",
-                    EquipSlot.BLADE, WeaponType.SABRE, null, 0, 0, 4, 0),
-            new Equipment("강화 마스크", 200, "방어력이 올라가요",
-                    EquipSlot.MASK, null, null, 0, 2, 0, 0),
-            new Equipment("집중 마스크", 260, "시야가 넓어져 기술이 올라요",
-                    EquipSlot.MASK, null, null, 0, 0, 0, 3),
-            new Equipment("가벼운 펜싱화", 200, "발이 한결 가벼워져요",
-                    EquipSlot.SHOES, null, null, 0, 0, 2, 0),
-            new Equipment("논슬립 펜싱화", 340, "비 오는 날에도 미끄럽지 않아요",
+            // 펜싱화: 민첩 +1 / +2 / +3
+            new Equipment("하급 스텝 펜싱화", 150, "펜싱화", "기본 움직임을 익히기 좋은 보급형 펜싱화.", 0, 0, 1, 0),
+            new Equipment("중급 밸런스 펜싱화", 450, "펜싱화", "발의 균형과 반응성을 높인 훈련용 펜싱화.", 0, 0, 2, 0),
+            new Equipment("상급 에어로 카본 펜싱화", 1200, "펜싱화", "가벼운 카본 소재로 빠른 발놀림을 돕는 경기용 펜싱화.", 0, 0, 3, 0),
+
+            // 그립: 기술 +1 / +2 / +3
+            new Equipment("하급 코르크 그립", 150, "그립", "기본적인 손잡이 감각을 익히는 코르크 그립.", 0, 0, 0, 1),
+            new Equipment("중급 컨트롤 그립", 450, "그립", "손에 잘 맞아 무기 조작을 돕는 인체공학 그립.", 0, 0, 0, 2),
+            new Equipment("상급 프로 텍스처 그립", 1200, "그립", "미세한 손동작까지 안정적으로 전달하는 경기용 그립.", 0, 0, 0, 3),
+
+            // 마스크: 방어 +1 / +2 / +3
+            new Equipment("하급 클럽 메쉬 마스크", 150, "마스크", "기본 보호 기능을 갖춘 연습용 메쉬 마스크.", 0, 1, 0, 0),
+            new Equipment("중급 강화 메쉬 마스크", 450, "마스크", "보강 프레임으로 충격을 줄이는 훈련용 마스크.", 0, 2, 0, 0),
+            new Equipment("상급 티타늄 케이지 마스크", 1200, "마스크", "가볍고 견고한 티타늄 프레임의 경기용 마스크.", 0, 3, 0, 0),
+
+            // 블레이드: 공격 +1 / +2 / +3
+            new Equipment("하급 플렉스 블레이드", 150, "블레이드", "다루기 쉬운 연습용 유연 블레이드.", 1, 0, 0, 0),
+            new Equipment("중급 포지드 스틸 블레이드", 450, "블레이드", "균형 잡힌 강도와 탄성을 갖춘 경기용 블레이드.", 2, 0, 0, 0),
+            new Equipment("상급 카본 합금 블레이드", 1200, "블레이드", "빠르고 힘 있는 공격에 적합한 고급 카본 합금 블레이드.", 3, 0, 0, 0),
+
+            // 기존 전투의 날씨 대응 장비
+            new Equipment("논슬립 펜싱화", 340, "비 오는 날에도 미끄럽지 않은 펜싱화",
                     EquipSlot.SHOES, null, GearTag.RAIN_PROOF, 0, 0, 1, 0),
-            new Equipment("보호 재킷", 220, "방어력이 올라가요",
-                    EquipSlot.JACKET, null, null, 0, 2, 0, 0),
-            new Equipment("쿨링 재킷", 340, "무더위에도 체력이 줄지 않아요",
+            new Equipment("쿨링 재킷", 340, "무더위에 강한 재킷",
                     EquipSlot.JACKET, null, GearTag.HEAT_PROOF, 0, 1, 0, 0)
     );
+
+    /** 상점 화면에서 사용하는 전체 목록. */
+    public static final List<Item> SHOP_ITEMS = ALL;
 }

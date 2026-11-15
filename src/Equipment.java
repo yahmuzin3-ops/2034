@@ -11,6 +11,7 @@ public class Equipment extends Item {
     private final EquipSlot slot;
     private final WeaponType only;
     private final GearTag tag;
+    private final String equipmentType;
 
     public Equipment(String name, int price, String description, EquipSlot slot, WeaponType only, GearTag tag,
                      int atk, int def, int agi, int tec) {
@@ -18,6 +19,7 @@ public class Equipment extends Item {
         this.slot = slot;
         this.only = only;
         this.tag = tag;
+        this.equipmentType = slot == null ? "장비" : slot.getDisplayName();
         this.atk = atk;
         this.def = def;
         this.agi = agi;
@@ -29,9 +31,19 @@ public class Equipment extends Item {
         this(name, price, description, null, null, null, atk, def, agi, tec);
     }
 
+    /** 종류별 장비 등록용 생성자. 지정한 능력치는 장착 중 선수 능력치에 더해진다. */
+    public Equipment(String name, int price, String equipmentType, String description,
+                     int atk, int def, int agi, int tec) {
+        this(name, price, description, EquipSlot.fromDisplayName(equipmentType), null, null,
+                atk, def, agi, tec);
+    }
+
     public EquipSlot getSlot() { return slot; }
     public WeaponType getOnly() { return only; }
     public GearTag getTag() { return tag; }
+    public String getEquipmentType() {
+        return equipmentType == null && slot != null ? slot.getDisplayName() : equipmentType;
+    }
     public int getAtk() { return atk; }
     public int getDef() { return def; }
     public int getAgi() { return agi; }
@@ -82,6 +94,6 @@ public class Equipment extends Item {
 
     @Override
     public String getTypeName() {
-        return slot == null ? "장비" : "장비·" + slot;
+        return slot == null ? "장비" : "장비·" + getEquipmentType();
     }
 }

@@ -6,7 +6,7 @@ import java.util.Map;
 
 /** 인벤토리: 보유 아이템 확인, 선수에게 사용(먹이 / 치료 / 장비) */
 public class InventoryPanel extends ScreenPanel {
-    private final JTable table = UI.table("종류", "이름", "보유", "설명");
+    private final JTable table = UI.table("모양", "종류", "이름", "보유", "설명");
     private final JComboBox<Fencer> combo = UI.fencerCombo();
     private final JLabel msg = new JLabel(" ");
     private final List<Item> rowItems = new ArrayList<>();
@@ -14,6 +14,7 @@ public class InventoryPanel extends ScreenPanel {
     public InventoryPanel(MainFrame frame) {
         super(frame, "인벤토리");
 
+        UI.iconColumn(table, 0);
         add(new JScrollPane(table), BorderLayout.CENTER);
 
         JPanel bottom = new JPanel(new BorderLayout(10, 8));
@@ -54,7 +55,7 @@ public class InventoryPanel extends ScreenPanel {
         for (Map.Entry<Item, Integer> e : state().getInventory().snapshot().entrySet()) {
             Item it = e.getKey();
             rowItems.add(it);
-            UI.model(table).addRow(new Object[]{it.getTypeName(), it.getName(), e.getValue(), it.getDescription()});
+            UI.model(table).addRow(new Object[]{GearArt.icon(it, 44), it.getTypeName(), it.getName(), e.getValue(), it.getDescription()});
         }
         if (sel >= 0 && sel < table.getRowCount()) table.setRowSelectionInterval(sel, sel);
     }

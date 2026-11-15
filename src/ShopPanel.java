@@ -8,11 +8,14 @@ import java.util.Map;
 public class ShopPanel extends ScreenPanel {
     private final JLabel goldLabel = new JLabel(" ");
     private final JLabel msg = new JLabel(" ");
-    private final JTable buyTable = UI.table("종류", "이름", "가격", "설명");
-    private final JTable sellTable = UI.table("종류", "이름", "보유", "판매가", "설명");
+    private final JTable buyTable = UI.table("모양", "종류", "이름", "가격", "설명");
+    private final JTable sellTable = UI.table("모양", "종류", "이름", "보유", "판매가", "설명");
     private final JSpinner buyQty = new JSpinner(new SpinnerNumberModel(1, 1, 99, 1));
     private final JSpinner sellQty = new JSpinner(new SpinnerNumberModel(1, 1, 99, 1));
     private final List<Item> sellItems = new ArrayList<>();
+    private final FencerFigure previewFigure = new FencerFigure();
+    private final JLabel previewName = new JLabel(" ");
+    private final JLabel previewInfo = new JLabel(" ");
 
     public ShopPanel(MainFrame frame) {
         super(frame, "상점");
@@ -25,8 +28,19 @@ public class ShopPanel extends ScreenPanel {
         msg.setBorder(BorderFactory.createEmptyBorder(0, 20, 0, 0));
 
         for (Item it : ItemCatalog.ALL) {
-            UI.model(buyTable).addRow(new Object[]{it.getTypeName(), it.getName(), it.getPrice() + "G", it.getDescription()});
+            UI.model(buyTable).addRow(new Object[]{GearArt.icon(it, 44), it.getTypeName(), it.getName(), it.getPrice() + "G", it.getDescription()});
         }
+
+        UI.iconColumn(buyTable, 0);
+        UI.iconColumn(sellTable, 0);
+        buyTable.getSelectionModel().addListSelectionListener(e -> {
+            int row = buyTable.getSelectedRow();
+            if (!e.getValueIsAdjusting() && row >= 0 && row < ItemCatalog.ALL.size()) showPreview(ItemCatalog.ALL.get(row));
+        });
+        sellTable.getSelectionModel().addListSelectionListener(e -> {
+            int row = sellTable.getSelectedRow();
+            if (!e.getValueIsAdjusting() && row >= 0 && row < sellItems.size()) showPreview(sellItems.get(row));
+        });
 
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("구매", tab(buyTable, buyQty, "구매", this::buy));
@@ -37,6 +51,31 @@ public class ShopPanel extends ScreenPanel {
         center.add(top, BorderLayout.NORTH);
         center.add(tabs, BorderLayout.CENTER);
         add(center, BorderLayout.CENTER);
+
+        // 오른쪽: 선택한 장비를 선수에게 입혀 보는 미리보기
+        JPanel preview = new JPanel(new BorderLayout(0, 6));
+        preview.setOpaque(false);
+        preview.setBorder(BorderFactory.createTitledBorder("착용 미리보기"));
+        preview.setPreferredSize(new Dimension(290, 0));
+        previewName.setFont(previewName.getFont().deriveFont(Font.BOLD, 14f));
+        previewName.setHorizontalAlignment(SwingConstants.CENTER);
+        previewInfo.setHorizontalAlignment(SwingConstants.CENTER);
+        preview.add(previewName, BorderLayout.NORTH);
+        preview.add(previewFigure, BorderLayout.CENTER);
+        preview.add(previewInfo, BorderLayout.SOUTH);
+        add(preview, BorderLayout.EAST);
+    }
+
+    /** 선택한 아이템이 장비면 첫 번째 선수에게 입혀서 보여준다. */
+    private void showPreview(Item it) {
+        java.util.List<Fencer> roster = state().getRoster();
+        Fencer f = roster.isEmpty() ? null : roster.get(0);
+        Equipment eq = it instanceof Equipment && ((Equipment) it).getSlot() != null ? (Equipment) it : null;
+        previewFigure.setTryOn(f, eq);
+        previewName.setText(it.getName());
+        String who = f == null ? "" : f.getName() + " 선수에게 입혀 본 모습";
+        previewInfo.setText("<html><div style='text-align:center;width:250px'>"
+                + (eq != null ? eq.statText() + "<br>" + who : it.getTypeName() + " 아이템") + "</div></html>");
     }
 
     private JPanel tab(JTable table, JSpinner qty, String btnText, Runnable action) {
@@ -93,7 +132,7 @@ public class ShopPanel extends ScreenPanel {
         for (Map.Entry<Item, Integer> e : state().getInventory().snapshot().entrySet()) {
             Item it = e.getKey();
             sellItems.add(it);
-            UI.model(sellTable).addRow(new Object[]{it.getTypeName(), it.getName(), e.getValue(),
+            UI.model(sellTable).addRow(new Object[]{GearArt.icon(it, 44), it.getTypeName(), it.getName(), e.getValue(),
                     it.getSellPrice() + "G", it.getDescription()});
         }
         if (sel >= 0 && sel < sellTable.getRowCount()) sellTable.setRowSelectionInterval(sel, sel);
@@ -107,6 +146,10 @@ public class ShopPanel extends ScreenPanel {
     public void onShow() {
         refreshSell();
         updateGold();
+        java.util.List<Fencer> roster = state().getRoster();
+        previewFigure.setTryOn(roster.isEmpty() ? null : roster.get(0), null);
+        previewName.setText("장비를 선택해 보세요");
+        previewInfo.setText(" ");
     }
 
     @Override

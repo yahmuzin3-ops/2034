@@ -8,7 +8,7 @@ public class GameStateTest {
         // 카탈로그에서 아이템 찾기
         Item bento = find("닭가슴살 도시락");
         Item kit = find("구급 키트");
-        Item blade = find("카본 블레이드");
+        Item blade = find("중급 포지드 스틸 블레이드");
 
         // 구매
         System.out.println("도시락 3개 구매: " + Shop.buy(state, bento, 3));
