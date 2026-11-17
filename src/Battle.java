@@ -85,6 +85,15 @@ public class Battle {
         public boolean sudden;            // 서든데스 중인지
     }
 
+    /** 경기 설정. 대회(토너먼트) 경기는 보상과 레이팅을 대회가 따로 처리하고, 예선 풀은 5점 1피리어드로 치른다. */
+    public static class Options {
+        public boolean rewards = true;        // 골드/경험치/전적(승리 수) 정산
+        public boolean rated = true;          // 파워 레이팅 반영
+        public String title;                  // 로그와 화면에 쓸 제목 (없으면 대회 이름)
+        public int target = TARGET_SCORE;     // 개인전 목표 점수
+        public int periods = PERIODS;         // 개인전 피리어드 수
+    }
+
     public static final int TARGET_SCORE = 15;     // 개인전 목표 점수
     private static final int BOUT_SECONDS = 180;   // 3분
     private static final int SUDDEN_SECONDS = 60;  // 서든데스 1분
@@ -110,6 +119,7 @@ public class Battle {
 
     private final GameState state;
     private final Region region;
+    private final Options opt;
     private final boolean boss;
     private final Weather weather;
     private final WeaponType eventWeapon;
@@ -157,8 +167,13 @@ public class Battle {
 
     /** customEnemies 가 null 이 아니면 그 선수들을 상대로 쓴다. (테스트/확장용) */
     public Battle(GameState state, Region region, List<Fencer> players, boolean boss, List<Fencer> customEnemies) {
+        this(state, region, players, boss, customEnemies, new Options());
+    }
+
+    public Battle(GameState state, Region region, List<Fencer> players, boolean boss, List<Fencer> customEnemies, Options options) {
         this.state = state;
         this.region = region;
+        this.opt = options == null ? new Options() : options;
         this.boss = boss;
         this.weather = state.getWeather();
         this.players = new ArrayList<>(players);
@@ -172,7 +187,8 @@ public class Battle {
         this.totalBouts = individual ? 1 : n * n;
         this.order = buildOrder(n);
 
-        String title = region.getDisplayName() + (eventWeapon != null ? " " + eventWeapon.getDisplayName() + "부" : "");
+        String title = opt.title != null ? opt.title
+                : region.getDisplayName() + (eventWeapon != null ? " " + eventWeapon.getDisplayName() + "부" : "");
         log("=== " + title + (boss ? " 결승전 (보스전)" : "") + (individual ? " 개인전" : " 단체전") + " ===");
         StringBuilder sb = new StringBuilder(boss ? "결승 상대: " : "상대 팀: ");
         for (Fencer e : enemies) {
@@ -181,7 +197,7 @@ public class Battle {
         }
         log(sb.toString().trim());
         if (individual) {
-            log("개인전(다이렉트 엘리미네이션): " + TARGET_SCORE + "점 선취, 3분 x " + PERIODS
+            log("개인전(다이렉트 엘리미네이션): " + opt.target + "점 선취, 3분 x " + opt.periods
                     + "피리어드, 동점이면 서든데스(우선권 추첨 후 1분)");
         } else {
             log("단체전 릴레이: 선수마다 상대와 한 번씩 겨뤄 " + totalBouts + "경기, 경기마다 3분, 점수는 팀 전체로 누적 ("
@@ -223,10 +239,10 @@ public class Battle {
     public List<Tactic> getRightHistory() { return new ArrayList<>(rightHistory); }
 
     /** 팀 경기의 현재 목표 점수 (개인전은 15점) */
-    public int getTargetScore() { return individual ? TARGET_SCORE : TEAM_BOUT_POINTS * (boutIndex + 1); }
+    public int getTargetScore() { return individual ? opt.target : TEAM_BOUT_POINTS * (boutIndex + 1); }
 
     /** 최종 목표 점수 (단체전은 경기 수 x 5점) */
-    public int getFinalScore() { return individual ? TARGET_SCORE : TEAM_BOUT_POINTS * totalBouts; }
+    public int getFinalScore() { return individual ? opt.target : TEAM_BOUT_POINTS * totalBouts; }
 
     /** 상대 선수의 성향 안내 (경기 전에 상대를 살펴본 정보) */
     public String getScoutReport() {
@@ -478,18 +494,18 @@ public class Battle {
         }
 
         if (individual) {
-            boolean l = leftScore >= TARGET_SCORE, r = rightScore >= TARGET_SCORE;
+            boolean l = leftScore >= opt.target, r = rightScore >= opt.target;
             if (l || r) {
                 endedByScore = true;
-                if (leftScore == rightScore) pauseFor(Next.SUDDEN, TARGET_SCORE + "점 동점! 서든데스로 넘어가요.");
-                else endMatch(leftScore > rightScore, leftScore > rightScore ? TARGET_SCORE + "점 선취! 승리!" : "상대가 " + TARGET_SCORE + "점에 먼저 도달했다... 패배");
+                if (leftScore == rightScore) pauseFor(Next.SUDDEN, opt.target + "점 동점! 서든데스로 넘어가요.");
+                else endMatch(leftScore > rightScore, leftScore > rightScore ? opt.target + "점 선취! 승리!" : "상대가 " + opt.target + "점에 먼저 도달했다... 패배");
                 return;
             }
             if (clock <= 0) {
-                if (period < PERIODS) {
+                if (period < opt.periods) {
                     pauseFor(Next.PERIOD, period + "피리어드 종료 (" + leftScore + " : " + rightScore + "). 1분 휴식!");
                 } else if (leftScore == rightScore) {
-                    pauseFor(Next.SUDDEN, "3피리어드 종료, " + leftScore + " : " + rightScore + " 동점! 서든데스로 넘어가요.");
+                    pauseFor(Next.SUDDEN, "" + opt.periods + "피리어드 종료, " + leftScore + " : " + rightScore + " 동점! 서든데스로 넘어가요.");
                 } else {
                     endMatch(leftScore > rightScore, "경기 종료! " + leftScore + " : " + rightScore + (leftScore > rightScore ? " 로 승리" : " 로 패배"));
                 }
@@ -896,7 +912,13 @@ public class Battle {
         if (settled) return "";
         settled = true;
         StringBuilder sb = new StringBuilder();
-        state.recordResult(won, region, boss, eventWeapon);
+        if (opt.rewards) state.recordResult(won, region, boss, eventWeapon);
+        if (opt.rated) {   // 파워 레이팅: 상대 평균 레이팅 기준으로 반영 (보스전은 더 크게)
+            double sum = 0;
+            for (Fencer e : enemies) sum += RatingSystem.baseRating(e);
+            double enemyRating = enemies.isEmpty() ? RatingSystem.BASE : sum / enemies.size();
+            for (Fencer f : players) f.applyRating(enemyRating, won, boss ? 24 : 16);
+        }
         state.addRecord(new MatchRecord(state.getDay(), eventWeapon, region, boss, weather, leftScore, rightScore, won));
         int clinic = state.getClinicLevel();
 
@@ -912,7 +934,9 @@ public class Battle {
             }
         }
 
-        if (won) {
+        if (!opt.rewards) {   // 대회 경기: 보상과 승리 수는 대회가 끝난 뒤 따로 정산한다.
+            sb.insert(0, (won ? "승리! " : "패배... ") + "최종 점수 " + leftScore + " : " + rightScore + "\n");
+        } else if (won) {
             int times = boss ? 2 : 1;
             double boost = state.consumeRewardBoost();
             int gold = (int) (region.getRewardGold() * times * boost);

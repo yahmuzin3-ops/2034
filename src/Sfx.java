@@ -64,6 +64,18 @@ public final class Sfx {
                 synth(110, 784, 784, 0.28, 0, false), synth(260, 1046, 1046, 0.3, 0, false)));
     }
 
+    /** 시상식 팡파르 */
+    public static void fanfare() {
+        play(concat(synth(130, 523, 523, 0.28, 0, false), synth(130, 659, 659, 0.28, 0, false),
+                synth(130, 784, 784, 0.28, 0, false), synth(240, 1046, 1046, 0.3, 0, false),
+                synth(120, 784, 784, 0.26, 0, false), synth(420, 1046, 1318, 0.32, 0, false)));
+    }
+
+    /** 알림(업적/의뢰 달성) 소리 */
+    public static void chime() {
+        play(concat(synth(90, 880, 880, 0.22, 0, false), synth(160, 1320, 1320, 0.22, 0, false)));
+    }
+
     public static void lose() {
         play(concat(synth(170, 392, 392, 0.28, 0, false), synth(170, 330, 330, 0.28, 0, false),
                 synth(300, 262, 262, 0.3, 0, false)));

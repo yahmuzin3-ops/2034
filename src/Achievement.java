@@ -8,7 +8,12 @@ public enum Achievement {
     RICH("부자 클럽", "재화 5000G 이상 보유하기", 500),
     BOSS_SLAYER("결승전 정복", "결승전(보스전)에서 승리하기", 600),
     GRAND_SLAM("3종목 석권", "플뢰레·에페·사브르 세계 선수권을 모두 우승하기", 3000),
-    WORLD_CHAMPION("세계 챔피언", "세계 선수권에서 우승하기", 3000);
+    WORLD_CHAMPION("세계 챔피언", "세계 선수권에서 우승하기", 3000),
+    KOREAN_CHAMPION("한국 챔피언", "한국 선수권에서 우승하기", 800),
+    FIRST_MEDAL("메달리스트", "대회에서 메달 따기", 500),
+    OLYMPIC_MEDAL("올림픽 메달", "올림픽에서 메달 따기", 3000),
+    OLYMPIC_CHAMPION("올림픽 챔피언", "올림픽에서 금메달 따기", 6000),
+    WORLD_NO1("세계 랭킹 1위", "한 종목 파워 랭킹 세계 1위에 오르기", 2000);
 
     private final String displayName;
     private final String description;

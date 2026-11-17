@@ -31,7 +31,7 @@ public class GoalPanel extends ScreenPanel {
         for (WeaponType w : WeaponType.values()) {
             sb.append("\n ").append(w.getDisplayName()).append("부  (").append(s.getWins(w)).append("승)\n");
             for (Region r : Region.values()) {
-                sb.append("   ").append(r.getDisplayName()).append(" (적 ").append(r.getLevelRange()).append(")  ");
+                sb.append("   ").append(r.getDisplayName()).append(r.isTournament() ? " (토너먼트)  " : " (적 " + r.getLevelRange() + ")  ");
                 if (s.isCleared(r, w)) sb.append("우승 경험 있음");
                 else if (r.isUnlocked(s.getWins(w))) sb.append("도전 가능");
                 else sb.append("잠김 (").append(r.getRequiredWins()).append("승 필요)");

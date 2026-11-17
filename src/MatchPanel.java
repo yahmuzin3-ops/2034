@@ -12,6 +12,7 @@ import java.util.Map;
 public class MatchPanel extends ScreenPanel {
     private static final String SETUP = "setup";
     private static final String BATTLE = "battle";
+    private static final String TOURNEY = "tourney";
 
     private final CardLayout cards = new CardLayout();
     private final JPanel root = new JPanel(cards);
@@ -23,6 +24,20 @@ public class MatchPanel extends ScreenPanel {
     private final JComboBox<Region> regionCombo = new JComboBox<>(Region.values());
     private final JLabel setupMsg = new JLabel(" ");
     private final JCheckBox bossCheck = new JCheckBox("결승전(보스전) 도전 - 보상 2배");
+
+    // 토너먼트 (한국 선수권 / 세계 선수권 / 올림픽)
+    private Tournament tournament;
+    private Tournament.Match curMatch;
+    private final TournamentPanel tourPanel = new TournamentPanel(new TournamentPanel.Actions() {
+        @Override
+        public void play() { playTournamentMatch(); }
+
+        @Override
+        public void simulate() { simulateTournamentMatch(); }
+
+        @Override
+        public void giveUp() { giveUpTournament(); }
+    });
 
     // 경기 화면
     private Battle battle;
@@ -45,6 +60,7 @@ public class MatchPanel extends ScreenPanel {
         stage.setLogSink(s -> UI.appendLog(logArea, s));
         root.add(buildSetup(), SETUP);
         root.add(buildBattle(), BATTLE);
+        root.add(tourPanel, TOURNEY);
         add(root, BorderLayout.CENTER);
     }
 
@@ -62,7 +78,9 @@ public class MatchPanel extends ScreenPanel {
                 if (value instanceof Region) {
                     Region r = (Region) value;
                     String lock = r.isUnlocked(state().getWins(selectedWeapon())) ? "" : "  [잠김: " + r.getRequiredWins() + "승 필요]";
-                    setText(r.getDisplayName() + "  (적 " + r.getLevelRange() + ", 보상 " + r.getRewardGold() + "G)" + lock);
+                    String kind = r.isTournament() ? "토너먼트" : "적 " + r.getLevelRange();
+                    if (r == Region.OLYMPIC && lock.isEmpty()) lock = "  [파워 랭킹 8위 이내만 출전]";
+                    setText(r.getDisplayName() + "  (" + kind + ", 보상 " + r.getRewardGold() + "G)" + lock);
                 }
                 return this;
             }
@@ -78,7 +96,8 @@ public class MatchPanel extends ScreenPanel {
         regionRow.add(new JLabel("도전할 대회"), BorderLayout.WEST);
         regionRow.add(regionCombo, BorderLayout.CENTER);
         JLabel format = new JLabel("<html>출전 선수 <b>1명 = 개인전</b> (" + Battle.TARGET_SCORE + "점 선취, 3분 x 3피리어드, 동점이면 서든데스)  /  "
-                + "<b>2~3명 = 단체전 릴레이</b> (경기당 3분, 5점씩 누적, 3명이면 9경기 45점)</html>");
+                + "<b>2~3명 = 단체전 릴레이</b> (경기당 3분, 5점씩 누적, 3명이면 9경기 45점)<br>"
+                + "한국 선수권·세계 선수권·올림픽은 <b>토너먼트</b>로 열려요. (예선 풀 5점 경기 → 본선 대진표, 올림픽은 동메달 결정전)</html>");
         format.setForeground(Color.GRAY);
         top.add(weaponRow);
         top.add(regionRow);
@@ -124,6 +143,10 @@ public class MatchPanel extends ScreenPanel {
                 return;
             }
         }
+        if (r.isTournament()) {
+            startTournament(r, weapon, sel);
+            return;
+        }
         boolean boss = bossCheck.isSelected();
         if (boss && !state().isCleared(r, weapon)) {
             setupMsg.setText("결승전(보스전)은 " + weapon + "부 해당 대회에서 한 번 이상 우승해야 열려요.");
@@ -137,6 +160,83 @@ public class MatchPanel extends ScreenPanel {
         stage.setup(battle);
         cards.show(root, BATTLE);
         playPending();
+    }
+
+    // ---------- 토너먼트 ----------
+
+    private void startTournament(Region r, WeaponType weapon, List<Fencer> sel) {
+        String why = state().canEnter(r, weapon, sel);
+        if (why != null) {
+            setupMsg.setText(r.getDisplayName() + " 출전 불가 - " + why);
+            return;
+        }
+        tournament = Tournament.create(state(), r, weapon, sel);
+        curMatch = null;
+        bossCheck.setSelected(false);
+        frame.getEngine().setPaused(true);   // 대회 중에는 게임 시간이 멈춘다
+        tourPanel.refresh(tournament);
+        cards.show(root, TOURNEY);
+    }
+
+    /** 다음 내 경기를 직접 한다. */
+    private void playTournamentMatch() {
+        if (tournament == null || battle != null) return;
+        Tournament.Match m = tournament.nextPlayerMatch();
+        if (m == null) return;
+        List<Fencer> mine = tournament.getMyFencers();
+        for (Fencer f : mine) {
+            if (f.isBusy()) {
+                setupMsg.setText(f.getName() + "은(는) 이미 시합 중이에요.");
+                return;
+            }
+        }
+        curMatch = m;
+        battle = new Battle(state(), tournament.getRegion(), mine, false, tournament.enemyFencers(m), tournament.optionsFor(m));
+        boutAuto = false;
+        logArea.setText("");
+        stage.setup(battle);
+        cards.show(root, BATTLE);
+        playPending();
+    }
+
+    private void simulateTournamentMatch() {
+        if (tournament == null || battle != null) return;
+        Tournament.Match m = tournament.nextPlayerMatch();
+        if (m == null) return;
+        tournament.simulatePlayerMatch(m);
+        afterTournamentStep();
+    }
+
+    private void giveUpTournament() {
+        if (tournament == null || battle != null) return;
+        int r = JOptionPane.showConfirmDialog(this, "대회를 포기할까요? (보상 없이 대회가 끝나요)", "대회 포기", JOptionPane.YES_NO_OPTION);
+        if (r != JOptionPane.YES_OPTION) return;
+        tournament.withdraw();
+        afterTournamentStep();
+    }
+
+    /** 내 경기가 하나 끝날 때마다: 대진표를 새로 그리고, 대회가 끝났으면 정산한다. */
+    private void afterTournamentStep() {
+        tourPanel.refresh(tournament);
+        cards.show(root, TOURNEY);
+        if (tournament.isFinished()) finishTournament();
+    }
+
+    private void finishTournament() {
+        Tournament t = tournament;
+        tournament = null;
+        curMatch = null;
+        String summary = state().finishTournament(t);
+        frame.getEngine().setPaused(false);
+        for (String line : summary.split("\n")) GameLog.post("[대회] " + line);
+        cards.show(root, SETUP);
+        refreshSetup();
+        if (t.getMedal() > 0) {
+            new CeremonyDialog(frame, t).setVisible(true);   // 메달을 따면 시상식이 열린다
+        } else {
+            Sfx.lose();
+        }
+        JOptionPane.showMessageDialog(this, summary, "대회 결과", JOptionPane.INFORMATION_MESSAGE);
     }
 
     // ---------- 경기 화면 ----------
@@ -310,8 +410,18 @@ public class MatchPanel extends ScreenPanel {
     private void finishBattle() {
         stage.stop();
         String summary = battle.settle();
+        boolean won = battle.isWon();
+        int myScore = battle.getPlayerScore(), oppScore = battle.getEnemyScore();
         battle = null;
         boutAuto = false;
+        if (tournament != null && curMatch != null) {   // 대회 경기: 결과를 대진표에 반영하고 대회 화면으로 돌아간다
+            Tournament.Match m = curMatch;
+            curMatch = null;
+            tournament.recordPlayerMatch(m, myScore, oppScore, won);
+            for (String line : summary.split("\n")) GameLog.post("[대회] " + line);
+            afterTournamentStep();
+            return;
+        }
         frame.getEngine().setPaused(false);
         JOptionPane.showMessageDialog(this, summary, "경기 결과", JOptionPane.INFORMATION_MESSAGE);
         for (String line : summary.split("\n")) GameLog.post("[경기] " + line);
@@ -347,7 +457,7 @@ public class MatchPanel extends ScreenPanel {
 
     @Override
     public void onShow() {
-        if (battle == null) {
+        if (battle == null && tournament == null) {
             if (!hasFencer(selectedWeapon())) {   // 선수가 있는 종목을 기본으로 보여준다
                 for (WeaponType w : WeaponType.values()) {
                     if (hasFencer(w)) {
@@ -365,6 +475,8 @@ public class MatchPanel extends ScreenPanel {
     public void onStateReplaced() {
         stage.stop();
         battle = null;
+        tournament = null;
+        curMatch = null;
         boutAuto = false;
         cards.show(root, SETUP);
         teamModel.clear();

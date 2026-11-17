@@ -41,10 +41,14 @@ public class GameState implements Serializable {
     // 종목별 전적과 대회 우승 기록 (플뢰레부 / 에페부 / 사브르부는 따로 진행된다)
     private EnumMap<WeaponType, Integer> winsByWeapon = new EnumMap<>(WeaponType.class);
     private EnumMap<WeaponType, EnumSet<Region>> clearedByWeapon = new EnumMap<>(WeaponType.class);
+    // 세계(컴퓨터 선수들)와 메달 기록 (예전 저장 파일에는 없을 수 있다)
+    private FencingWorld world;
+    private List<MedalRecord> medals = new ArrayList<>();
 
     /** 새 게임: 선수 1명 + 기본 아이템 */
     public static GameState newGame() {
         GameState s = new GameState();
+        s.world = new FencingWorld();
         s.addFencer(new Fencer("아델", WeaponType.SABRE, Personality.PASSIONATE));
         s.getInventory().add(ItemCatalog.ALL.get(0), 3); // 에너지바
         s.getInventory().add(ItemCatalog.ALL.get(3), 1); // 파스
@@ -97,11 +101,18 @@ public class GameState implements Serializable {
             }
         }
         generateMissions();   // 하루가 지나면 새 의뢰가 나온다
+        getWorld().tick(day, RANDOM);   // 컴퓨터 선수들도 훈련하고 경기를 치른다
+        if (day % 7 == 0) {              // 7일마다 주간 레이팅 변동 기준을 새로 잡는다
+            for (Fencer f : roster) f.snapshotRating();
+        }
     }
 
     // ---------- 선수 ----------
 
-    public void addFencer(Fencer fencer) { roster.add(fencer); }
+    public void addFencer(Fencer fencer) {
+        fencer.snapshotRating();
+        roster.add(fencer);
+    }
 
     public List<Fencer> getRoster() { return roster; }
 
@@ -113,6 +124,7 @@ public class GameState implements Serializable {
         if (!spendGold(recruitCost())) return null;
         Personality p = Personality.values()[RANDOM.nextInt(Personality.values().length)];
         Fencer f = new Fencer(name, weapon, p);
+        f.snapshotRating();
         roster.add(f);
         return f;
     }
@@ -369,6 +381,24 @@ public class GameState implements Serializable {
         }
         check(Achievement.GRAND_SLAM, slam, out);
         check(Achievement.WORLD_CHAMPION, cleared.contains(Region.WORLD), out);
+        boolean korean = false, olyMedal = false, olyGold = false;
+        for (MedalRecord m : medals) {
+            if (m.getRegion() == Region.NATIONAL && m.getRank() == 1) korean = true;
+            if (m.getRegion() == Region.OLYMPIC) {
+                olyMedal = true;
+                if (m.getRank() == 1) olyGold = true;
+            }
+        }
+        check(Achievement.KOREAN_CHAMPION, korean, out);
+        check(Achievement.FIRST_MEDAL, !medals.isEmpty(), out);
+        check(Achievement.OLYMPIC_MEDAL, olyMedal, out);
+        check(Achievement.OLYMPIC_CHAMPION, olyGold, out);
+        boolean no1 = false;
+        for (WeaponType w : WeaponType.values()) {
+            List<RankEntry> rk = getRanking(w);
+            if (!rk.isEmpty() && rk.get(0).isMine()) no1 = true;
+        }
+        check(Achievement.WORLD_NO1, no1, out);
         return out;
     }
 
@@ -377,6 +407,89 @@ public class GameState implements Serializable {
             gold += a.getReward();
             out.add("목표 달성: " + a.getDisplayName() + " (+" + a.getReward() + "G)");
         }
+    }
+
+    // ---------- 세계 / 파워 랭킹 / 대회 ----------
+
+    public synchronized FencingWorld getWorld() {
+        if (world == null) world = new FencingWorld();
+        return world;
+    }
+
+    public synchronized List<MedalRecord> getMedals() {
+        return new ArrayList<>(medals);
+    }
+
+    /** 종목별 세계 파워 랭킹 (컴퓨터 선수 + 내 선수). rank 가 채워진다. */
+    public synchronized List<RankEntry> getRanking(WeaponType w) {
+        List<RankEntry> all = new ArrayList<>();
+        for (Rival r : getWorld().getRivals(w)) all.add(new RankEntry(r));
+        for (Fencer f : roster) if (f.getWeapon() == w) all.add(new RankEntry(f));
+        all.sort((a, b) -> Double.compare(b.rating, a.rating));
+        for (int i = 0; i < all.size(); i++) all.get(i).rank = i + 1;
+        return all;
+    }
+
+    /** 내 선수의 종목 세계 순위 (없으면 0) */
+    public synchronized int bestRank(WeaponType w, List<Fencer> team) {
+        int best = 0;
+        for (RankEntry e : getRanking(w)) {
+            if (e.isMine() && team.contains(e.fencer)) {
+                best = e.rank;
+                break;
+            }
+        }
+        return best;
+    }
+
+    /** 대회에 나갈 수 있는지. 나갈 수 있으면 null, 없으면 이유를 돌려준다. */
+    public synchronized String canEnter(Region r, WeaponType w, List<Fencer> team) {
+        if (!r.isUnlocked(getWins(w))) return "잠김: " + w.getDisplayName() + "부 " + r.getRequiredWins() + "승 필요 (지금 " + getWins(w) + "승)";
+        if (r == Region.OLYMPIC) {
+            int rank = bestRank(w, team);
+            if (rank == 0 || rank > 8) return "파워 랭킹 8위 이내만 출전 가능 (지금 " + (rank == 0 ? "-" : rank + "위") + ")";
+        }
+        return null;
+    }
+
+    /** 토너먼트가 끝났을 때 보상, 메달, 우승 기록, 목표를 정산하고 결과 문구를 돌려준다. */
+    public synchronized String finishTournament(Tournament t) {
+        Region r = t.getRegion();
+        WeaponType w = t.getWeapon();
+        int place = t.getPlacement();
+        int medal = t.getMedal();
+        double factor = place == 1 ? 1.0 : place == 2 ? 0.5 : place == 3 ? 0.3 : place == 0 ? 0 : 0.1;
+        StringBuilder sb = new StringBuilder();
+        sb.append(t.getTitle()).append(" - ").append(t.getPlacementText()).append("\n");
+
+        int gold = 0, exp = 0;
+        if (factor > 0) {
+            double boost = medal > 0 ? consumeRewardBoost() : 1.0;
+            gold = (int) (r.getRewardGold() * factor * boost);
+            exp = (int) (r.getRewardExp() * factor);
+            addGold(gold);
+            sb.append("보상: ").append(gold).append("G").append(boost > 1 ? " (보너스 x" + boost + ")" : "").append("\n");
+        }
+        for (Fencer f : t.getMyFencers()) {
+            f.addFatigue(10);
+            if (exp > 0 && f.gainExp(exp)) {
+                sb.append(f.getName()).append("이(가) Lv.").append(f.getLevel()).append("(으)로 성장했어요!\n");
+            }
+        }
+        if (medal > 0) {
+            medals.add(new MedalRecord(day, r, w, medal, t.isTeam(), t.getMe().name));
+            int bonusWins = medal == 1 ? 2 : 1;   // 메달은 승리 수로 쳐서 다음 대회가 열리는 데 도움이 된다.
+            wins += bonusWins;
+            winsByWeapon.merge(w, bonusWins, Integer::sum);
+            progressMissions(Mission.Type.WIN_MATCH, w, 1);
+            progressMissions(Mission.Type.WEAPON_WIN, w, 1);
+        }
+        if (place == 1) {
+            cleared.add(r);
+            clearedByWeapon.computeIfAbsent(w, k -> EnumSet.noneOf(Region.class)).add(r);
+        }
+        for (String m : checkAchievements()) sb.append(m).append("\n");
+        return sb.toString().trim();
     }
 
     // ---------- 경기 기록 ----------
@@ -433,6 +546,7 @@ public class GameState implements Serializable {
     private void readObject(ObjectInputStream in) throws IOException, ClassNotFoundException {
         in.defaultReadObject();
         if (history == null) history = new ArrayList<>();       // 기록/의뢰가 없던 예전 저장 파일
+        if (medals == null) medals = new ArrayList<>();         // 메달/세계가 없던 예전 저장 파일
         if (missions == null) {
             missions = new ArrayList<>();
             generateMissions();

@@ -56,6 +56,13 @@ public class Fencer implements Serializable {
     // 장착한 장비 (부위마다 1개). 예전 저장 파일에는 없을 수 있다.
     private EnumMap<EquipSlot, Equipment> gear;
 
+    // 파워 레이팅: 능력치로 정해지는 기본 레이팅 + 경기 결과(Elo)로 오르내리는 보정값. 예전 저장 파일에는 없다.
+    private double ratingOffset = 0;
+    private int ratedWins = 0, ratedLosses = 0;
+    private double ratingMark = 0;      // 이번 주 기준 값
+    private double ratingPrevMark = 0;  // 지난주 기준 값 (주간 변동 = 지금 - 지난주)
+    private boolean ratingMarkSet = false;
+
     // 시합 중에는 자율 행동을 하지 않는다 (저장하지 않음)
     private transient volatile boolean busy = false;
 
@@ -367,6 +374,39 @@ public class Fencer implements Serializable {
         if (hunger >= 80) mood = clamp(mood - 3);
         if (fatigue >= 70) mood = clamp(mood - 2);
     }
+
+    // ---------- 파워 레이팅 ----------
+
+    /** 파워 레이팅 = 능력치로 정한 기본 레이팅 + 경기 결과 보정 */
+    public synchronized double getRating() {
+        return RatingSystem.baseRating(this) + ratingOffset;
+    }
+
+    /** 레이팅 경기 결과 반영 (k: 한 경기로 움직이는 최대 점수) */
+    public synchronized void applyRating(double oppRating, boolean won, double k) {
+        double e = RatingSystem.expected(getRating(), oppRating);
+        ratingOffset += k * ((won ? 1 : 0) - e);
+        ratingOffset = Math.max(-120, Math.min(120, ratingOffset));
+        if (won) ratedWins++;
+        else ratedLosses++;
+    }
+
+    /** 주간 변동 기준을 지금 레이팅으로 새로 잡는다. */
+    public synchronized void snapshotRating() {
+        double now = getRating();
+        ratingPrevMark = ratingMarkSet ? ratingMark : now;
+        ratingMark = now;
+        ratingMarkSet = true;
+    }
+
+    /** 최근 1~2주 동안의 레이팅 변동 */
+    public synchronized double getRatingDelta() {
+        if (!ratingMarkSet) return 0;
+        return getRating() - ratingPrevMark;
+    }
+
+    public synchronized int getRatedWins() { return ratedWins; }
+    public synchronized int getRatedLosses() { return ratedLosses; }
 
     public synchronized boolean isBusy() { return busy; }
     public synchronized void setBusy(boolean busy) { this.busy = busy; }

@@ -34,6 +34,8 @@ public class FencingStage extends JPanel {
         double lunge;        // 찌르기 정도 0~1
         double shift;        // 전진(+)/후퇴(-) 이동(px)
         long flashUntil;     // 맞았을 때 번쩍임
+        long celebrateUntil; // 득점/승리 세리머니가 끝나는 시각
+        boolean slump;       // 졌을 때 고개를 떨군 자세
 
         Fx(Fencer f, boolean rightSide) {
             this.f = f;
@@ -177,6 +179,7 @@ public class FencingStage extends JPanel {
             case END:
                 if (e.value == 1) Sfx.win();
                 else Sfx.lose();
+                finalPoses(e.value == 1, now);
                 showBanner(e.value == 1 ? "VICTORY!" : "DEFEAT", e.value == 1 ? new Color(255, 215, 80) : new Color(230, 90, 90), now, curDur);
                 break;
             case PHRASE:
@@ -186,6 +189,19 @@ public class FencingStage extends JPanel {
                 break;
             default:
                 break;
+        }
+    }
+
+    /** 경기가 끝났을 때: 이긴 쪽은 세리머니, 진 쪽은 고개를 떨군다. (색종이 별이 흩날린다) */
+    private void finalPoses(boolean playerWon, long now) {
+        Fx winner = playerWon ? L : R, loser = playerWon ? R : L;
+        if (winner != null) winner.celebrateUntil = Long.MAX_VALUE;
+        if (loser != null) loser.slump = true;
+        if (playerWon) {
+            Color[] pal = {new Color(255, 215, 80), new Color(255, 120, 120), new Color(110, 200, 255), new Color(140, 230, 140), new Color(220, 140, 255)};
+            for (int i = 0; i < 14; i++) {
+                spawnAt(getWidth() * (0.12 + 0.76 * rnd.nextDouble()), 150 + rnd.nextInt(180), "★", pal[rnd.nextInt(pal.length)], 20 + rnd.nextInt(16), 1400);
+            }
         }
     }
 
@@ -332,6 +348,8 @@ public class FencingStage extends JPanel {
     private void touchFx(int side, Battle.Event e, long now) {
         Sfx.hit(false);
         Sfx.score();
+        Fx scorer = side == 0 ? L : R;
+        if (scorer != null) scorer.celebrateUntil = now + (fast ? 550 : 1250);   // 득점 세리머니
         scorePulseUntil = now + 700;
         shakeUntil = now + 180;
         double x = getWidth() / 2.0 + (side == 0 ? -90 : 90);
@@ -501,44 +519,9 @@ public class FencingStage extends JPanel {
         WeaponType wt = fx.f.getWeapon();
         boolean tired = battle != null && battle.isExhausted(fx.f) && fx.hp <= 0;
 
-        Graphics2D gg = (Graphics2D) g.create();
-        gg.translate(x, y + bob);
-        gg.setColor(new Color(0, 0, 0, 70));
-        gg.fill(new Ellipse2D.Double(-34 * sc, -5 * sc, 68 * sc, 12 * sc));
-        gg.scale(facing * sc, sc);
-        gg.rotate(tired ? -0.12 : wt == WeaponType.EPEE ? 0.10 : wt == WeaponType.SABRE ? -0.04 : 0.0);
-        double l = fx.lunge;
-        BasicStroke thick = new BasicStroke(6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-
-        gg.setStroke(thick);
-        gg.setColor(new Color(50, 56, 82));
-        gg.draw(new Line2D.Double(-4, -30, -12 - 4 * l, 0));
-        gg.draw(new Line2D.Double(4, -30, 10 + 22 * l, 0));
-        gg.setStroke(new BasicStroke(5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-        gg.setColor(new Color(235, 238, 246));
-        gg.draw(wt == WeaponType.SABRE ? new Line2D.Double(-8, -54, -18, -76) : new Line2D.Double(-8, -54, -16, -64));
-        RoundRectangle2D torso = new RoundRectangle2D.Double(-12, -64, 24, 36, 10, 10);
-        gg.setColor(flash ? new Color(255, 125, 125) : new Color(240, 243, 250));
-        gg.fill(torso);
-        if (wt != WeaponType.EPEE && !flash) {   // 플뢰레/사브르: 전기 채점용 금속 재킷
-            gg.setPaint(new GradientPaint(-12, -64, new Color(225, 232, 245), 12, -28, new Color(150, 162, 190)));
-            gg.fill(torso);
-        }
-        gg.setColor(wc);
-        gg.fill(new Rectangle2D.Double(-12, -48, 24, 5));
-        gg.setColor(new Color(60, 66, 94));
-        gg.setStroke(new BasicStroke(1.5f));
-        gg.draw(torso);
-        Ellipse2D head = new Ellipse2D.Double(-11, -86, 22, 22);
-        gg.setColor(flash ? new Color(255, 160, 160) : Color.WHITE);
-        gg.fill(head);
-        gg.setColor(new Color(110, 116, 142));
-        gg.setStroke(new BasicStroke(1f));
-        gg.draw(head);
-        for (int i = -6; i <= 6; i += 4) gg.draw(new Line2D.Double(i, -84, i, -66));
-        for (int j = -80; j <= -68; j += 4) gg.draw(new Line2D.Double(-9, j, 9, j));
-        drawWeaponArm(gg, wt, l, wc, fx.f == (battle == null ? null : battle.getLeft()) ? 0 : 0);
-        gg.dispose();
+        FencerArt.Pose pose = fx.slump ? FencerArt.Pose.SLUMP : now < fx.celebrateUntil ? FencerArt.Pose.CELEBRATE
+                : tired ? FencerArt.Pose.TIRED : FencerArt.Pose.NORMAL;
+        FencerArt.draw(g, wt, x, y + bob, sc, facing, fx.lunge, flash, pose, now);
 
         // 이름 / 체력(지구력)
         g.setFont(getFont().deriveFont(Font.BOLD, 13f));
@@ -565,70 +548,6 @@ public class FencingStage extends JPanel {
         if (streak >= 2) drawBadge(g, "후방 라인 주의 " + streak + "/4", new Color(215, 85, 55), x - 50, y - 227);
     }
 
-    /** 종목별 검과 팔: 플뢰레=가는 검 찌르기, 에페=굵은 검+큰 벨 가드, 사브르=휘어진 날 베기 */
-    private void drawWeaponArm(Graphics2D gg, WeaponType wt, double l, Color wc, int unused) {
-        Color skin = new Color(235, 238, 246);
-        BasicStroke arm = new BasicStroke(5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND);
-        switch (wt) {
-            case SABRE: {
-                double hx = 10 + 14 * l, hy = -60 + 6 * l;
-                gg.setStroke(arm);
-                gg.setColor(skin);
-                gg.draw(new Line2D.Double(6, -58, hx, hy));
-                double ang = -1.0 + 1.45 * l;
-                double len = 44 + 8 * l;
-                double tx = hx + Math.cos(ang) * len, ty = hy + Math.sin(ang) * len;
-                double mx = (hx + tx) / 2 + Math.sin(ang) * 7, my = (hy + ty) / 2 - Math.cos(ang) * 7;
-                gg.setStroke(new BasicStroke(2.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                gg.setColor(new Color(218, 225, 238));
-                gg.draw(new QuadCurve2D.Double(hx, hy, mx, my, tx, ty));
-                gg.setColor(wc);
-                gg.setStroke(new BasicStroke(3.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                gg.draw(new Arc2D.Double(hx - 7, hy - 7, 14, 14, 80, 200, Arc2D.OPEN));
-                if (l > 0.15) {
-                    gg.setColor(new Color(255, 255, 255, (int) (120 * l)));
-                    gg.setStroke(new BasicStroke(2.2f));
-                    gg.draw(new Arc2D.Double(hx - 30, hy - 56, 84, 84, 50, -110 * l, Arc2D.OPEN));
-                }
-                break;
-            }
-            case EPEE: {
-                double hx = 8 + 20 * l, hy = -54 - (1 - l) * 2;
-                gg.setStroke(arm);
-                gg.setColor(skin);
-                gg.draw(new Line2D.Double(6, -58, hx, hy));
-                double ang = -0.12 * (1 - l);
-                double len = 52 + 14 * l;
-                gg.setStroke(new BasicStroke(3.6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                gg.setColor(new Color(140, 150, 172));
-                gg.draw(new Line2D.Double(hx, hy, hx + Math.cos(ang) * len, hy + Math.sin(ang) * len));
-                gg.setColor(wc.darker());
-                gg.fill(new Arc2D.Double(hx - 6, hy - 9, 16, 18, 90, 180, Arc2D.PIE));
-                gg.setColor(wc);
-                gg.setStroke(new BasicStroke(1.5f));
-                gg.draw(new Arc2D.Double(hx - 6, hy - 9, 16, 18, 90, 180, Arc2D.OPEN));
-                break;
-            }
-            default: {
-                double hx = 8 + 18 * l, hy = -56 - (1 - l) * 4;
-                gg.setStroke(arm);
-                gg.setColor(skin);
-                gg.draw(new Line2D.Double(6, -58, hx, hy));
-                double ang = -0.35 * (1 - l);
-                double len = 46 + 14 * l;
-                double tx = hx + Math.cos(ang) * len, ty = hy + Math.sin(ang) * len;
-                gg.setStroke(new BasicStroke(1.8f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
-                gg.setColor(new Color(222, 229, 242));
-                gg.draw(new Line2D.Double(hx, hy, tx, ty));
-                gg.setColor(wc);
-                gg.fill(new Ellipse2D.Double(hx - 1, hy - 4, 8, 8));
-                gg.fill(new Ellipse2D.Double(tx - 2, ty - 2, 4, 4));
-                break;
-            }
-        }
-    }
-
-    /** 두 선수가 고른 전술을 머리 위에 동시에 공개한다. */
     private void drawTactics(Graphics2D g, long now) {
         if (cur == null || cur.kind != Battle.Event.Kind.PHRASE) return;
         double q = (now - curStart) / (double) Math.max(1, curDur);

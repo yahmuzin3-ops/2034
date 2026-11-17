@@ -25,6 +25,7 @@ public class MainFrame extends JFrame {
     private final ButtonGroup navGroup = new ButtonGroup();
     private String currentKey = "home";
 
+    private final ToastPane toastPane = new ToastPane();
     private final JLabel goldLabel = new JLabel();
     private final JLabel dayLabel = new JLabel();
     private final JLabel weatherLabel = new JLabel();
@@ -44,6 +45,8 @@ public class MainFrame extends JFrame {
         add(createSideMenu(), BorderLayout.WEST);
         add(cardPanel, BorderLayout.CENTER);
 
+        setGlassPane(toastPane);
+        GameLog.addListener(this::toastFromLog);   // 업적/의뢰 달성은 화면 위에 알림으로 띄운다
         registerScreens();
         showScreen("home");
         updateTopBar();
@@ -62,6 +65,22 @@ public class MainFrame extends JFrame {
                 exitGame();
             }
         });
+    }
+
+    /** 달성/메달 알림 팝업 */
+    public void toast(String title, String msg, Color accent) {
+        SwingUtilities.invokeLater(() -> toastPane.show(title, msg, accent));
+    }
+
+    private void toastFromLog(String msg) {
+        int i = msg.indexOf("목표 달성: ");
+        if (i >= 0) {
+            toast("업적 달성!", msg.substring(i + "목표 달성: ".length()), GOLD);
+        } else if (msg.startsWith("[의뢰] 완료!")) {
+            toast("의뢰 완료!", msg.substring("[의뢰] 완료! ".length()), new Color(110, 220, 140));
+        } else if (msg.startsWith("[대회] ") && (msg.endsWith("우승!") || msg.contains("(동메달)") || msg.endsWith("준우승"))) {
+            toast("메달 획득!", msg.substring("[대회] ".length()), new Color(255, 205, 70));
+        }
     }
 
     public GameState getGameState() { return state; }
@@ -106,8 +125,8 @@ public class MainFrame extends JFrame {
 
         String[][] menus = {
                 {"home", "홈"}, {"athletes", "선수 관리"}, {"training", "훈련"}, {"shop", "상점"},
-                {"inventory", "인벤토리"}, {"match", "경기 · 대회"}, {"facility", "시설"}, {"goals", "목표 · 의뢰"},
-                {"history", "경기 기록"},
+                {"inventory", "인벤토리"}, {"match", "경기 · 대회"}, {"ranking", "파워 랭킹"}, {"facility", "시설"},
+                {"goals", "목표 · 의뢰"}, {"history", "경기 기록"},
         };
         for (String[] m : menus) {
             side.add(createNavButton(m[0], m[1]));
@@ -159,6 +178,7 @@ public class MainFrame extends JFrame {
         addScreen("shop", new ShopPanel(this));
         addScreen("inventory", new InventoryPanel(this));
         addScreen("match", new MatchPanel(this));
+        addScreen("ranking", new RankingPanel(this));
         addScreen("facility", new FacilityPanel(this));
         addScreen("goals", new GoalPanel(this));
         addScreen("history", new HistoryPanel(this));

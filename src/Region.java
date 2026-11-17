@@ -11,8 +11,9 @@ public enum Region {
     //          이름              적Lv  적Lv  필요승 보상G 보상EXP
     CLUB("동네 클럽 대회",          1, 1,   0,   150,  60),
     PROVINCIAL("도 대회",           3, 6,   3,   400, 120),
-    NATIONAL("전국 대회",           8, 13,  8,   900, 220),
-    WORLD("세계 선수권",           14, 22, 20,  2500, 500);
+    NATIONAL("한국 선수권",         8, 13,  8,   900, 220),
+    WORLD("세계 선수권",           14, 22, 20,  2500, 500),
+    OLYMPIC("올림픽",              20, 28, 30,  6000, 900);
 
     private static final Random R = new Random();
     private static final List<String> NAMES = List.of(
@@ -28,6 +29,11 @@ public enum Region {
         this.requiredWins = requiredWins;
         this.rewardGold = rewardGold;
         this.rewardExp = rewardExp;
+    }
+
+    /** 토너먼트(예선 풀 + 본선 대진표)로 치르는 대회인지 */
+    public boolean isTournament() {
+        return this == NATIONAL || this == WORLD || this == OLYMPIC;
     }
 
     public boolean isUnlocked(int wins) {
