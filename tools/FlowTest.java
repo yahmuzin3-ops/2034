@@ -35,7 +35,9 @@ public class FlowTest {
         // 1. 잠금 / 랭킹 / 출전 조건
         check(s.canEnter(Region.NATIONAL, WeaponType.SABRE, team) != null, "한국 선수권은 승리 수가 모자라면 잠겨 있다: " + s.canEnter(Region.NATIONAL, WeaponType.SABRE, team));
         for (int i = 0; i < 40; i++) s.recordResult(true, Region.CLUB, false, WeaponType.SABRE);
-        check(s.canEnter(Region.NATIONAL, WeaponType.SABRE, team) == null, "40승 후 한국 선수권 출전 가능");
+        check(s.canEnter(Region.NATIONAL, WeaponType.SABRE, team) != null, "승리 수가 충분해도 대회 기간이 아니면 출전할 수 없다: " + s.canEnter(Region.NATIONAL, WeaponType.SABRE, team));
+        for (int i = 0; i < 25; i++) s.nextDay();   // 자국 선수권 기간(20~27일)으로
+        check(s.canEnter(Region.NATIONAL, WeaponType.SABRE, team) == null, "40승 + 대회 기간이면 자국 선수권 출전 가능");
         System.out.println("     올림픽 사브르: " + s.canEnter(Region.OLYMPIC, WeaponType.SABRE, team));
         List<RankEntry> rk = s.getRanking(WeaponType.SABRE);
         System.out.println("     사브르 랭킹 1위 " + rk.get(0).name + " " + Math.round(rk.get(0).rating) + ", 8위 " + Math.round(rk.get(7).rating) + ", 내 최고 순위 " + s.bestRank(WeaponType.SABRE, team));
@@ -64,6 +66,7 @@ public class FlowTest {
         check(!one.get(0).isBusy(), "대회 후 선수는 시합 중이 아니다");
 
         // 3. 세계 선수권 단체전 (실제 경기, 3명)
+        for (int i = 0; i < 30; i++) s.nextDay();   // 세계 선수권 기간(50~59일)으로
         t = Tournament.create(s, Region.WORLD, WeaponType.SABRE, team);
         while (!t.isFinished()) {
             Tournament.Match m = t.nextPlayerMatch();

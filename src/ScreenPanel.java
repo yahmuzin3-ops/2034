@@ -17,7 +17,21 @@ public class ScreenPanel extends JPanel {
         setBackground(UI.BG);
         JLabel t = new JLabel(title);
         t.setFont(t.getFont().deriveFont(Font.BOLD, 24f));
-        add(t, BorderLayout.NORTH);
+        JButton help = new JButton("? 도움말");   // 모든 화면에서 같은 자리에 있다
+        help.setFocusPainted(false);
+        help.setToolTipText("이 화면에 맞는 도움말을 열어요 (F1)");
+        help.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        help.addActionListener(e -> HelpDialog.show(this, helpTopic()));
+        JPanel head = new JPanel(new BorderLayout());
+        head.setOpaque(false);
+        head.add(t, BorderLayout.CENTER);
+        head.add(help, BorderLayout.EAST);
+        add(head, BorderLayout.NORTH);
+    }
+
+    /** 도움말 버튼을 눌렀을 때 열 탭 (화면마다 바꿔 쓴다) */
+    protected String helpTopic() {
+        return HelpDialog.START;
     }
 
     protected GameState state() {

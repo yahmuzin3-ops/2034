@@ -7,11 +7,12 @@ import java.util.List;
 /** 파워 랭킹: 종목별 세계 랭킹, 내 선수, 메달 기록, 대회 출전 조건 */
 public class RankingPanel extends ScreenPanel {
     private final JComboBox<WeaponType> weaponCombo = new JComboBox<>(WeaponType.values());
-    private final JCheckBox koreanOnly = new JCheckBox("한국 선수만 보기");
+    private final JCheckBox koreanOnly = new JCheckBox("자국 선수만 보기");
     private final JLabel summary = new JLabel(" ");
+    private final JButton nationBtn = new JButton("소속 국가 변경");
 
-    private final JTable rankTable = UI.table("세계", "한국", "선수", "국가", "파워 레이팅", "등급", "환산 Lv", "전적", "주간 변동");
-    private final JTable mineTable = UI.table("선수", "종목", "파워 레이팅", "등급", "세계 순위", "한국 순위", "전적", "주간 변동");
+    private final JTable rankTable = UI.table("세계", "국내", "선수", "국가", "파워 레이팅", "등급", "환산 Lv", "전적", "주간 변동");
+    private final JTable mineTable = UI.table("선수", "종목", "파워 레이팅", "등급", "세계 순위", "국내 순위", "전적", "주간 변동");
     private final JTable medalTable = UI.table("일차", "대회", "종목", "구분", "메달", "선수");
     private final JTable entryTable = UI.table("대회", "종목", "출전 조건 / 상태");
     private final JLabel medalSummary = new JLabel(" ");
@@ -31,6 +32,16 @@ public class RankingPanel extends ScreenPanel {
         pick.add(weaponCombo);
         koreanOnly.setOpaque(false);
         pick.add(koreanOnly);
+        pick.add(nationBtn);
+        nationBtn.addActionListener(e -> {
+            String cur = state().getNation();
+            String code = NationChooser.choose(this, cur);
+            if (code != null && !code.equals(cur)) {
+                state().setNation(code);
+                frame.toast("소속 국가 변경", FencingWorld.nationName(code) + " 소속이 되었어요. 자국 선수권이 " + Region.NATIONAL.getDisplayName() + "으로 바뀌어요.", new Color(110, 200, 255));
+                refresh(true);
+            }
+        });
         top.add(pick, BorderLayout.NORTH);
         top.add(summary, BorderLayout.CENTER);
 
@@ -44,6 +55,7 @@ public class RankingPanel extends ScreenPanel {
                 Component c = super.getTableCellRendererComponent(t, v, sel, focus, row, col);
                 boolean isMine = row >= 0 && row < shown.size() && shown.get(row).isMine();
                 setHorizontalAlignment(col == 2 || col == 3 || col == 5 ? LEFT : CENTER);
+                setIcon(col == 3 && v != null ? FlagArt.icon(v.toString(), 22, 15) : null);   // 국가 열에는 국기
                 if (!sel) {
                     c.setBackground(isMine ? new Color(255, 238, 170) : row < 3 ? new Color(238, 244, 255) : Color.WHITE);
                     c.setFont(c.getFont().deriveFont(isMine ? Font.BOLD : Font.PLAIN));
@@ -85,8 +97,9 @@ public class RankingPanel extends ScreenPanel {
     private void refresh(boolean force) {
         GameState s = state();
         WeaponType w = weapon();
+        String home = s.getNation();
         List<RankEntry> all = s.getRanking(w);
-        StringBuilder sig = new StringBuilder().append(w).append(koreanOnly.isSelected()).append(s.getMedals().size());
+        StringBuilder sig = new StringBuilder().append(s.getNation()).append(w).append(koreanOnly.isSelected()).append(s.getMedals().size());
         sig.append((int) all.get(0).rating).append(all.size());
         for (RankEntry e : all) if (e.isMine()) sig.append((int) e.rating);
         if (!force && s.getDay() == lastDay && sig.toString().equals(lastSig)) return;
@@ -97,15 +110,15 @@ public class RankingPanel extends ScreenPanel {
         int korRank = 0;
         int[] korRanks = new int[all.size()];
         for (int i = 0; i < all.size(); i++) {
-            if ("KOR".equals(all.get(i).nation)) korRank++;
-            korRanks[i] = "KOR".equals(all.get(i).nation) ? korRank : 0;
+            if (home.equals(all.get(i).nation)) korRank++;
+            korRanks[i] = home.equals(all.get(i).nation) ? korRank : 0;
         }
 
         shown = new ArrayList<>();
         UI.model(rankTable).setRowCount(0);
         for (int i = 0; i < all.size(); i++) {
             RankEntry e = all.get(i);
-            if (koreanOnly.isSelected() && !"KOR".equals(e.nation)) continue;
+            if (koreanOnly.isSelected() && !home.equals(e.nation)) continue;
             shown.add(e);
             UI.model(rankTable).addRow(new Object[]{e.rank, korRanks[i] == 0 ? "-" : korRanks[i], e.name + (e.isMine() ? "  (내 선수)" : ""),
                     e.nation, Math.round(e.rating), e.getTier(), String.format("%.1f", e.levelEquivalent),
@@ -116,9 +129,9 @@ public class RankingPanel extends ScreenPanel {
         RankEntry best = null;
         for (RankEntry e : all) if (e.isMine()) { best = e; break; }
         if (best == null) {
-            summary.setText("<html>" + w + "부 선수가 없어요. 선수 관리에서 영입하면 랭킹에 올라요.<br>레이팅이 높을수록 센 선수이고, 이기면 오르고 지면 내려가요. 자기보다 센 상대를 이기면 더 많이 올라요.</html>");
+            summary.setText("<html>소속 국가: <b>" + FencingWorld.nationName(home) + "</b><br>" + w + "부 선수가 없어요. 선수 관리에서 영입하면 랭킹에 올라요.<br>레이팅이 높을수록 센 선수이고, 이기면 오르고 지면 내려가요. 자기보다 센 상대를 이기면 더 많이 올라요.</html>");
         } else {
-            summary.setText("<html><b>" + w + "부</b> 내 최고 선수: <b>" + best.name + "</b> - 세계 <b>" + best.rank + "위</b> / 파워 레이팅 <b>"
+            summary.setText("<html>소속 국가: <b>" + FencingWorld.nationName(home) + "</b><br><b>" + w + "부</b> 내 최고 선수: <b>" + best.name + "</b> - 세계 <b>" + best.rank + "위</b> / 파워 레이팅 <b>"
                     + Math.round(best.rating) + "</b> (" + best.getTier() + ")<br>올림픽 출전 조건: 파워 레이팅 8위 이내 "
                     + (best.rank <= 8 ? "<font color='green'>(충족!)</font>" : "<font color='gray'>(" + (best.rank - 8) + "계단 남음)</font>") + "</html>");
         }
@@ -129,7 +142,7 @@ public class RankingPanel extends ScreenPanel {
             List<RankEntry> list = s.getRanking(ww);
             int kr = 0;
             for (RankEntry e : list) {
-                if ("KOR".equals(e.nation)) kr++;
+                if (home.equals(e.nation)) kr++;
                 if (e.isMine()) {
                     UI.model(mineTable).addRow(new Object[]{e.name, ww.getDisplayName(), Math.round(e.rating), e.getTier(),
                             e.rank + "위", kr + "위", e.wins + "승 " + e.losses + "패", delta(e.delta)});
@@ -170,6 +183,9 @@ public class RankingPanel extends ScreenPanel {
             }
         }
     }
+
+    @Override
+    protected String helpTopic() { return HelpDialog.RATING; }
 
     @Override
     public void onShow() { refresh(true); }

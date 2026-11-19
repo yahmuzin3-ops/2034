@@ -11,13 +11,15 @@ public enum Region {
     //          이름              적Lv  적Lv  필요승 보상G 보상EXP
     CLUB("동네 클럽 대회",          1, 1,   0,   150,  60),
     PROVINCIAL("도 대회",           3, 6,   3,   400, 120),
-    NATIONAL("한국 선수권",         8, 13,  8,   900, 220),
+    NATIONAL("자국 선수권",         8, 13,  8,   900, 220),
     WORLD("세계 선수권",           14, 22, 20,  2500, 500),
     OLYMPIC("올림픽",              20, 28, 30,  6000, 900);
 
     private static final Random R = new Random();
     private static final List<String> NAMES = List.of(
             "레온", "미샤", "카이", "루카", "엘레나", "빅토르", "소피", "안톤", "이자벨", "마르코");
+
+    private static volatile String homeNation = "KOR";   // 내 선수의 소속 국가 (자국 선수권 이름에 쓰인다)
 
     private final String displayName;
     private final int minLevel, maxLevel, requiredWins, rewardGold, rewardExp;
@@ -81,12 +83,16 @@ public enum Region {
         return createBoss(null);
     }
 
-    public String getDisplayName() { return displayName; }
+    public static void setHomeNation(String code) { homeNation = code == null ? "KOR" : code; }
+
+    public String getDisplayName() {
+        return this == NATIONAL ? FencingWorld.shortName(homeNation) + " 선수권" : displayName;
+    }
     public int getRequiredWins() { return requiredWins; }
     public int getRewardGold() { return rewardGold; }
     public int getRewardExp() { return rewardExp; }
     public String getLevelRange() { return "Lv." + minLevel + "~" + maxLevel; }
 
     @Override
-    public String toString() { return displayName; }
+    public String toString() { return getDisplayName(); }
 }

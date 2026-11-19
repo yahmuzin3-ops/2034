@@ -25,7 +25,7 @@ public class MatchPanel extends ScreenPanel {
     private final JLabel setupMsg = new JLabel(" ");
     private final JCheckBox bossCheck = new JCheckBox("결승전(보스전) 도전 - 보상 2배");
 
-    // 토너먼트 (한국 선수권 / 세계 선수권 / 올림픽)
+    // 토너먼트 (자국 선수권 / 세계 선수권 / 올림픽)
     private Tournament tournament;
     private Tournament.Match curMatch;
     private final TournamentPanel tourPanel = new TournamentPanel(new TournamentPanel.Actions() {
@@ -34,6 +34,9 @@ public class MatchPanel extends ScreenPanel {
 
         @Override
         public void simulate() { simulateTournamentMatch(); }
+
+        @Override
+        public void simulateAll() { simulateRest(); }
 
         @Override
         public void giveUp() { giveUpTournament(); }
@@ -62,6 +65,33 @@ public class MatchPanel extends ScreenPanel {
         root.add(buildBattle(), BATTLE);
         root.add(tourPanel, TOURNEY);
         add(root, BorderLayout.CENTER);
+        installKeys();
+    }
+
+    /** 경기 중 키보드: 1~6 전술 선택, Space/Enter 계속하기 */
+    private void installKeys() {
+        InputMap im = getInputMap(WHEN_IN_FOCUSED_WINDOW);
+        ActionMap am = getActionMap();
+        Battle.Tactic[] ts = Battle.Tactic.values();
+        for (int i = 0; i < ts.length; i++) {
+            final Battle.Tactic t = ts[i];
+            for (int code : new int[]{java.awt.event.KeyEvent.VK_1 + i, java.awt.event.KeyEvent.VK_NUMPAD1 + i}) im.put(KeyStroke.getKeyStroke(code, 0), "tactic" + i);
+            am.put("tactic" + i, new AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    JButton b = tacticButtons.get(t);
+                    if (b != null && b.isShowing() && b.isEnabled()) b.doClick();
+                }
+            });
+        }
+        for (int code : new int[]{java.awt.event.KeyEvent.VK_SPACE, java.awt.event.KeyEvent.VK_ENTER}) im.put(KeyStroke.getKeyStroke(code, 0), "continue");
+        am.put("continue", new AbstractAction() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent e) {
+                if (continueBtn.isShowing() && continueBtn.isEnabled()) continueBtn.doClick();
+            }
+        });
+        continueBtn.setToolTipText("키보드: Space 또는 Enter");
     }
 
     // ---------- 편성 화면 ----------
@@ -80,6 +110,7 @@ public class MatchPanel extends ScreenPanel {
                     String lock = r.isUnlocked(state().getWins(selectedWeapon())) ? "" : "  [잠김: " + r.getRequiredWins() + "승 필요]";
                     String kind = r.isTournament() ? "토너먼트" : "적 " + r.getLevelRange();
                     if (r == Region.OLYMPIC && lock.isEmpty()) lock = "  [파워 랭킹 8위 이내만 출전]";
+                    if (r.isTournament() && lock.isEmpty()) lock += "  [" + SeasonCalendar.statusText(r, state().getDay()) + "]";
                     setText(r.getDisplayName() + "  (" + kind + ", 보상 " + r.getRewardGold() + "G)" + lock);
                 }
                 return this;
@@ -97,7 +128,7 @@ public class MatchPanel extends ScreenPanel {
         regionRow.add(regionCombo, BorderLayout.CENTER);
         JLabel format = new JLabel("<html>출전 선수 <b>1명 = 개인전</b> (" + Battle.TARGET_SCORE + "점 선취, 3분 x 3피리어드, 동점이면 서든데스)  /  "
                 + "<b>2~3명 = 단체전 릴레이</b> (경기당 3분, 5점씩 누적, 3명이면 9경기 45점)<br>"
-                + "한국 선수권·세계 선수권·올림픽은 <b>토너먼트</b>로 열려요. (예선 풀 5점 경기 → 본선 대진표, 올림픽은 동메달 결정전)</html>");
+                + "자국 선수권·세계 선수권·올림픽은 <b>토너먼트</b>로 열려요. (예선 풀 5점 경기 → 본선 대진표, 올림픽은 동메달 결정전)</html>");
         format.setForeground(Color.GRAY);
         top.add(weaponRow);
         top.add(regionRow);
@@ -170,6 +201,7 @@ public class MatchPanel extends ScreenPanel {
             setupMsg.setText(r.getDisplayName() + " 출전 불가 - " + why);
             return;
         }
+        state().markEntered(r, weapon);   // 한 대회에는 종목마다 한 번만 출전할 수 있다.
         tournament = Tournament.create(state(), r, weapon, sel);
         curMatch = null;
         bossCheck.setSelected(false);
@@ -207,6 +239,19 @@ public class MatchPanel extends ScreenPanel {
         afterTournamentStep();
     }
 
+    /** 남은 내 경기를 모두 시뮬레이션하고 대회를 끝낸다. */
+    private void simulateRest() {
+        if (tournament == null || battle != null) return;
+        if (JOptionPane.showConfirmDialog(this, "남은 내 경기를 모두 시뮬레이션할까요?\n(직접 하는 것보다 결과를 예측하기 어려워요)", "끝까지 시뮬레이션", JOptionPane.YES_NO_OPTION) != JOptionPane.YES_OPTION) return;
+        int guard = 0;
+        while (!tournament.isFinished() && guard++ < 50) {
+            Tournament.Match m = tournament.nextPlayerMatch();
+            if (m == null) break;
+            tournament.simulatePlayerMatch(m);
+        }
+        afterTournamentStep();
+    }
+
     private void giveUpTournament() {
         if (tournament == null || battle != null) return;
         int r = JOptionPane.showConfirmDialog(this, "대회를 포기할까요? (보상 없이 대회가 끝나요)", "대회 포기", JOptionPane.YES_NO_OPTION);
@@ -228,6 +273,7 @@ public class MatchPanel extends ScreenPanel {
         curMatch = null;
         String summary = state().finishTournament(t);
         frame.getEngine().setPaused(false);
+        frame.autosave();   // 대회가 끝나면 자동 저장
         for (String line : summary.split("\n")) GameLog.post("[대회] " + line);
         cards.show(root, SETUP);
         refreshSetup();
@@ -260,9 +306,11 @@ public class MatchPanel extends ScreenPanel {
         // 전술 선택 버튼 6개
         JPanel tactics = new JPanel(new GridLayout(1, 6, 6, 0));
         tactics.setOpaque(false);
+        int tacticNo = 0;
         for (Battle.Tactic t : Battle.Tactic.values()) {
-            JButton b = UI.button(t.getDisplayName() + " (체력 " + t.getCost() + ")");
-            b.setToolTipText("<html><b>" + t.getDisplayName() + "</b><br>" + t.getHint() + "</html>");
+            tacticNo++;
+            JButton b = UI.button(tacticNo + " " + t.getDisplayName() + " (체력 " + t.getCost() + ")");
+            b.setToolTipText("<html><b>" + t.getDisplayName() + "</b> (키보드 " + tacticNo + ")<br>" + t.getHint() + "</html>");
             b.addActionListener(e -> choose(t));
             tacticButtons.put(t, b);
             tactics.add(b);
@@ -417,6 +465,7 @@ public class MatchPanel extends ScreenPanel {
         if (tournament != null && curMatch != null) {   // 대회 경기: 결과를 대진표에 반영하고 대회 화면으로 돌아간다
             Tournament.Match m = curMatch;
             curMatch = null;
+            JOptionPane.showMessageDialog(this, summary, "경기 결과", JOptionPane.INFORMATION_MESSAGE);   // 경기 장면(세리머니)이 뒤에 보인다
             tournament.recordPlayerMatch(m, myScore, oppScore, won);
             for (String line : summary.split("\n")) GameLog.post("[대회] " + line);
             afterTournamentStep();
@@ -454,6 +503,9 @@ public class MatchPanel extends ScreenPanel {
         setupMsg.setText(teamModel.isEmpty() ? "이 종목 선수가 없어요. 선수 관리에서 " + w + " 선수를 영입해보세요." : " ");
         regionCombo.repaint();
     }
+
+    @Override
+    protected String helpTopic() { return HelpDialog.MATCH; }
 
     @Override
     public void onShow() {

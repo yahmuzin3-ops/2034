@@ -9,7 +9,7 @@ public enum Achievement {
     BOSS_SLAYER("결승전 정복", "결승전(보스전)에서 승리하기", 600),
     GRAND_SLAM("3종목 석권", "플뢰레·에페·사브르 세계 선수권을 모두 우승하기", 3000),
     WORLD_CHAMPION("세계 챔피언", "세계 선수권에서 우승하기", 3000),
-    KOREAN_CHAMPION("한국 챔피언", "한국 선수권에서 우승하기", 800),
+    KOREAN_CHAMPION("국내 챔피언", "자국 선수권(소속 국가의 선수권)에서 우승하기", 800),
     FIRST_MEDAL("메달리스트", "대회에서 메달 따기", 500),
     OLYMPIC_MEDAL("올림픽 메달", "올림픽에서 메달 따기", 3000),
     OLYMPIC_CHAMPION("올림픽 챔피언", "올림픽에서 금메달 따기", 6000),

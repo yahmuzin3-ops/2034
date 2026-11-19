@@ -92,6 +92,7 @@ public class Battle {
         public String title;                  // 로그와 화면에 쓸 제목 (없으면 대회 이름)
         public int target = TARGET_SCORE;     // 개인전 목표 점수
         public int periods = PERIODS;         // 개인전 피리어드 수
+        public String leftNation, rightNation; // 점수판에 국기를 띄울 국가 (없으면 표시하지 않는다)
     }
 
     public static final int TARGET_SCORE = 15;     // 개인전 목표 점수
@@ -147,6 +148,12 @@ public class Battle {
     private final Set<Fencer> exhausted = new HashSet<>();
     private final List<Tactic> leftHistory = new ArrayList<>();
     private final List<Tactic> rightHistory = new ArrayList<>();
+
+    // 경기 통계 (경기가 끝나면 GameState 에 쌓인다)
+    private int phraseCount, touchesFor, touchesAgainst, doubleCount, offTargetCount, exitsFor, exitsAgainst, ripostesFor, ripostesAgainst;
+    private final int[] usedCount = new int[Tactic.values().length], scoredCount = new int[Tactic.values().length], oppUsedCount = new int[Tactic.values().length];
+    private final Map<String, int[]> perFencer = new LinkedHashMap<>();
+    private boolean hadSuddenDeath = false;
 
     private Phase phase = Phase.PHRASE;
     private Next next = Next.BOUT;
@@ -244,7 +251,10 @@ public class Battle {
     /** 최종 목표 점수 (단체전은 경기 수 x 5점) */
     public int getFinalScore() { return individual ? opt.target : TEAM_BOUT_POINTS * totalBouts; }
 
-    /** 상대 선수의 성향 안내 (경기 전에 상대를 살펴본 정보) */
+    public String getLeftNation() { return opt.leftNation; }
+    public String getRightNation() { return opt.rightNation; }
+
+    /** 상대 선수의 성향 안내 (경기 전에 상대를 살펴본 정보). 전력 분석관이 있으면 더 자세해진다. */
     public String getScoutReport() {
         if (right == null) return "";
         double[] w = baseWeights(right);
@@ -252,8 +262,29 @@ public class Battle {
         int a = 0, b = -1;
         for (int i = 1; i < w.length; i++) if (w[i] > w[a]) a = i;
         for (int i = 0; i < w.length; i++) if (i != a && (b < 0 || w[i] > w[b])) b = i;
-        return right.getName() + " (" + right.getWeapon().getDisplayName() + "·" + right.getPersonality().getDisplayName()
+        String base = right.getName() + " (" + right.getWeapon().getDisplayName() + "·" + right.getPersonality().getDisplayName()
                 + ") - " + ts[a].getDisplayName() + "과(와) " + ts[b].getDisplayName() + "을(를) 즐겨 써요";
+        int lv = state.getAnalystLevel();
+        if (lv < 2) return base;
+        double sum = 0;
+        for (double x : w) sum += Math.max(0, x);
+        Integer[] idx = new Integer[w.length];
+        for (int i = 0; i < idx.length; i++) idx[i] = i;
+        java.util.Arrays.sort(idx, (p, q) -> Double.compare(w[q], w[p]));
+        StringBuilder sb = new StringBuilder(base).append("  |  분석 Lv").append(lv).append(": ");
+        int shown = lv >= 4 ? 4 : 3;
+        for (int i = 0; i < shown && i < idx.length; i++) {
+            if (i > 0) sb.append(" · ");
+            sb.append(ts[idx[i]].getDisplayName()).append(" ").append(sum <= 0 ? 0 : Math.round(100 * Math.max(0, w[idx[i]]) / sum)).append("%");
+        }
+        if (lv >= 4 && !rightHistory.isEmpty()) {   // 최근 5번 중 가장 많이 쓴 전술 (다음 선택 예상)
+            int[] cnt = new int[ts.length];
+            for (int i = Math.max(0, rightHistory.size() - 5); i < rightHistory.size(); i++) cnt[rightHistory.get(i).ordinal()]++;
+            int best = 0;
+            for (int i = 1; i < cnt.length; i++) if (cnt[i] > cnt[best]) best = i;
+            sb.append("  |  최근 5번 중 ").append(ts[best].getDisplayName()).append(" ").append(cnt[best]).append("번");
+        }
+        return sb.toString();
     }
 
     public List<String> drainLog() {
@@ -349,6 +380,7 @@ public class Battle {
     }
 
     private void startSuddenDeath() {
+        hadSuddenDeath = true;
         suddenDeath = true;
         left = bestOf(players);
         right = bestOf(enemies);
@@ -392,6 +424,40 @@ public class Battle {
     }
 
     // ---------- 한 구간 ----------
+
+    /** 이번 구간의 결과를 통계에 쌓는다. */
+    private void collectStats(Tactic tl, Tactic tr, Res res, Event e) {
+        phraseCount++;
+        usedCount[tl.ordinal()]++;
+        oppUsedCount[tr.ordinal()]++;
+        int[] pf = perFencer.computeIfAbsent(left.getName(), k -> new int[3]);
+        pf[0]++;
+        if (res.off) offTargetCount++;
+        switch (e.outcome) {
+            case TOUCH_LEFT:
+                touchesFor++;
+                scoredCount[tl.ordinal()]++;
+                pf[1]++;
+                if (res.exit) exitsFor++;
+                if (e.riposteSide == 0) ripostesFor++;
+                break;
+            case TOUCH_RIGHT:
+                touchesAgainst++;
+                pf[2]++;
+                if (res.exit) exitsAgainst++;
+                if (e.riposteSide == 1) ripostesAgainst++;
+                break;
+            case DOUBLE:
+                doubleCount++;
+                touchesFor++;
+                touchesAgainst++;
+                pf[1]++;
+                pf[2]++;
+                break;
+            default:
+                break;
+        }
+    }
 
     private void phrase(Tactic tl, Tactic tr) {
         Res res = resolve(left, tl, right, tr);
@@ -457,6 +523,7 @@ public class Battle {
 
         leftHistory.add(tl);
         rightHistory.add(tr);
+        collectStats(tl, tr, res, e);
         checkProgress(e.outcome);
     }
 
@@ -907,6 +974,39 @@ public class Battle {
 
     // ---------- 정산 ----------
 
+    private MatchStat buildStat() {
+        MatchStat m = new MatchStat();
+        m.day = state.getDay();
+        m.weapon = eventWeapon;
+        m.region = region;
+        m.title = opt.title != null ? opt.title : region.getDisplayName() + (boss ? " 결승전" : "");
+        StringBuilder names = new StringBuilder();
+        for (Fencer f : enemies) names.append(names.length() > 0 ? ", " : "").append(f.getName());
+        m.opponent = names.toString();
+        m.oppNation = opt.rightNation;
+        m.individual = individual;
+        m.tournament = region.isTournament();
+        m.boss = boss;
+        m.sudden = hadSuddenDeath;
+        m.won = won;
+        m.myScore = leftScore;
+        m.oppScore = rightScore;
+        m.phrases = phraseCount;
+        m.used = usedCount.clone();
+        m.scored = scoredCount.clone();
+        m.oppUsed = oppUsedCount.clone();
+        m.touchesFor = touchesFor;
+        m.touchesAgainst = touchesAgainst;
+        m.doubles = doubleCount;
+        m.offTargets = offTargetCount;
+        m.exitsFor = exitsFor;
+        m.exitsAgainst = exitsAgainst;
+        m.ripostesFor = ripostesFor;
+        m.ripostesAgainst = ripostesAgainst;
+        m.perFencer = new HashMap<>(perFencer);
+        return m;
+    }
+
     /** 경기 종료 후 보상/부상/피로를 반영하고 결과 문구를 반환 (한 번만 실행됨) */
     public String settle() {
         if (settled) return "";
@@ -920,6 +1020,7 @@ public class Battle {
             for (Fencer f : players) f.applyRating(enemyRating, won, boss ? 24 : 16);
         }
         state.addRecord(new MatchRecord(state.getDay(), eventWeapon, region, boss, weather, leftScore, rightScore, won));
+        state.addMatchStat(buildStat());
         int clinic = state.getClinicLevel();
 
         for (Fencer f : players) {
@@ -927,7 +1028,7 @@ public class Battle {
             f.addFatigue(15);
             if (exhausted.contains(f)) {   // 체력이 바닥난 채로 뛴 선수는 다칠 수 있다
                 f.heal(Math.max(1, f.getMaxHp() / 5));
-                if (rnd.nextDouble() < 0.35 - 0.07 * clinic) {
+                if (rnd.nextDouble() < 0.35 - 0.07 * clinic - state.getPhysioInjuryCut()) {
                     f.injure();
                     sb.append(f.getName()).append("이(가) 무리해서 부상을 입었어요.\n");
                 }

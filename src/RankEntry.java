@@ -24,9 +24,9 @@ public class RankEntry {
         this.rival = r;
     }
 
-    public RankEntry(Fencer f) {
+    public RankEntry(Fencer f, String nation) {
         this.name = f.getName();
-        this.nation = "KOR";
+        this.nation = nation;
         this.weapon = f.getWeapon();
         this.rating = f.getRating();
         this.levelEquivalent = RatingSystem.levelEquivalent(f);

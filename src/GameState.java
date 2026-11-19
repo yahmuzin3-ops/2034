@@ -6,8 +6,12 @@ import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.EnumSet;
 import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
@@ -43,12 +47,21 @@ public class GameState implements Serializable {
     private EnumMap<WeaponType, EnumSet<Region>> clearedByWeapon = new EnumMap<>(WeaponType.class);
     // 세계(컴퓨터 선수들)와 메달 기록 (예전 저장 파일에는 없을 수 있다)
     private FencingWorld world;
+    private List<Staff> staff = new ArrayList<>();              // 고용한 코치·스태프
+    private List<Staff> candidates = new ArrayList<>();         // 영입 후보
+    private List<MatchStat> matchStats = new ArrayList<>();     // 경기 통계 (최근 400경기)
+    private Map<String, RivalRecord> rivalRecords = new LinkedHashMap<>();   // 컴퓨터 선수와의 상대 전적
+    private Set<String> enteredEvents = new HashSet<>();        // 이미 출전한 시즌 대회
+    private boolean showGuide = false;                         // 새 게임에서 처음 한 번만 도움말을 보여준다
+    private String nation = "KOR";   // 내 선수들의 소속 국가 (예전 저장 파일에는 없다)
     private List<MedalRecord> medals = new ArrayList<>();
 
     /** 새 게임: 선수 1명 + 기본 아이템 */
     public static GameState newGame() {
         GameState s = new GameState();
         s.world = new FencingWorld();
+        s.showGuide = true;
+        Region.setHomeNation("KOR");
         s.addFencer(new Fencer("아델", WeaponType.SABRE, Personality.PASSIONATE));
         s.getInventory().add(ItemCatalog.ALL.get(0), 3); // 에너지바
         s.getInventory().add(ItemCatalog.ALL.get(3), 1); // 파스
@@ -105,6 +118,155 @@ public class GameState implements Serializable {
         if (day % 7 == 0) {              // 7일마다 주간 레이팅 변동 기준을 새로 잡는다
             for (Fencer f : roster) f.snapshotRating();
         }
+        announceSeason();
+        if (day % Staff.PAY_DAYS == 0) payStaff();
+        if (candidates.isEmpty() || day % 14 == 0) refreshCandidates();
+    }
+
+    // ---------- 시즌 캘린더 ----------
+
+    /** 대회가 열리거나 닫힐 때 알림을 남긴다. */
+    private void announceSeason() {
+        for (SeasonCalendar.Event e : SeasonCalendar.between(day, day + 3)) {
+            if (e.start == day) GameLog.post("[시즌] " + e.getName() + " 개막! " + e.getPeriodText() + " (" + (e.end - e.start + 1) + "일간)");
+            else if (e.start == day + 3) GameLog.post("[시즌] " + e.getName() + "이(가) 3일 뒤에 열려요.");
+        }
+        for (SeasonCalendar.Event e : SeasonCalendar.between(day - 1, day - 1)) {
+            if (e.end == day - 1) GameLog.post("[시즌] " + e.getName() + "이(가) 끝났어요.");
+        }
+    }
+
+    /** 이 대회(종목별)에 이미 출전했는지 */
+    public synchronized boolean hasEntered(Region r, WeaponType w) {
+        SeasonCalendar.Event ev = SeasonCalendar.current(r, day);
+        return ev != null && enteredEvents.contains(ev.key() + "|" + w);
+    }
+
+    /** 대회에 출전했다고 기록한다. (한 대회에는 종목마다 한 번만 나갈 수 있다) */
+    public synchronized void markEntered(Region r, WeaponType w) {
+        SeasonCalendar.Event ev = SeasonCalendar.current(r, day);
+        if (ev != null) enteredEvents.add(ev.key() + "|" + w);
+    }
+
+    /** 시즌별 메달 포인트: 금 10, 은 6, 동 4 (세계 선수권 x2, 올림픽 x3) */
+    public synchronized int seasonPoints(int year) {
+        int pts = 0;
+        for (MedalRecord m : medals) {
+            if (SeasonCalendar.yearOf(m.getDay()) != year) continue;
+            int base = m.getRank() == 1 ? 10 : m.getRank() == 2 ? 6 : 4;
+            pts += base * (m.getRegion() == Region.OLYMPIC ? 3 : m.getRegion() == Region.WORLD ? 2 : 1);
+        }
+        return pts;
+    }
+
+    // ---------- 코치 · 스태프 ----------
+
+    public synchronized List<Staff> getStaff() { return new ArrayList<>(staff); }
+
+    public synchronized List<Staff> getCandidates() { return new ArrayList<>(candidates); }
+
+    public synchronized Staff getStaff(Staff.Role role) {
+        for (Staff s : staff) if (s.getRole() == role) return s;
+        return null;
+    }
+
+    public synchronized int staffLevel(Staff.Role role) {
+        Staff s = getStaff(role);
+        return s == null ? 0 : s.getLevel();
+    }
+
+    public synchronized int getStaffWeeklyCost() {
+        int sum = 0;
+        for (Staff s : staff) sum += s.getWeeklySalary();
+        return sum;
+    }
+
+    public synchronized double getCoachBonus() { return 0.04 * staffLevel(Staff.Role.HEAD_COACH); }
+    public synchronized int getPhysioMatchHeal() { return 3 * staffLevel(Staff.Role.PHYSIO); }
+    public synchronized double getPhysioInjuryCut() { return 0.02 * staffLevel(Staff.Role.PHYSIO); }
+    public synchronized int getAnalystLevel() { return staffLevel(Staff.Role.ANALYST); }
+    public synchronized int getNutritionLevel() { return staffLevel(Staff.Role.NUTRITIONIST); }
+
+    /** 후보를 새로 뽑는다. 역할마다 2명, 레벨은 1~4. */
+    public synchronized void refreshCandidates() {
+        candidates.clear();
+        for (Staff.Role role : Staff.Role.values()) {
+            for (int i = 0; i < 2; i++) {
+                int lv = 1 + RANDOM.nextInt(4);
+                candidates.add(Staff.random(role, lv, RANDOM));
+            }
+        }
+    }
+
+    public synchronized String hireStaff(Staff s) {
+        if (s == null || !candidates.contains(s)) return "영입할 후보를 선택해주세요.";
+        Staff cur = getStaff(s.getRole());
+        if (cur != null) return "이미 " + s.getRole() + "가 있어요. 먼저 계약을 종료하거나 승급을 이용하세요.";
+        if (!spendGold(s.getHireFee())) return "골드가 부족해요. (영입 비용 " + s.getHireFee() + "G)";
+        s.setHiredDay(day);
+        staff.add(s);
+        candidates.remove(s);
+        return s.getName() + " " + s.getRole() + "를 영입했어요. (" + s.getEffectText() + ")";
+    }
+
+    public synchronized String fireStaff(Staff.Role role) {
+        Staff s = getStaff(role);
+        if (s == null) return role + "가 없어요.";
+        staff.remove(s);
+        return s.getName() + " " + role + "와(과) 계약을 종료했어요.";
+    }
+
+    public synchronized String promoteStaff(Staff.Role role) {
+        Staff s = getStaff(role);
+        if (s == null) return role + "가 없어요.";
+        if (!s.canPromote()) return "이미 최고 레벨이에요.";
+        if (!spendGold(s.getPromoteCost())) return "골드가 부족해요. (승급 비용 " + s.getPromoteCost() + "G)";
+        s.promote();
+        return s.getName() + " " + role + "가 Lv." + s.getLevel() + "로 승급했어요. (" + s.getEffectText() + ")";
+    }
+
+    /** 주급 정산: 모자라면 비싼 스태프부터 떠난다. */
+    private void payStaff() {
+        if (staff.isEmpty()) return;
+        int total = getStaffWeeklyCost();
+        while (!staff.isEmpty() && gold < total) {
+            Staff worst = staff.get(0);
+            for (Staff s : staff) if (s.getWeeklySalary() > worst.getWeeklySalary()) worst = s;
+            staff.remove(worst);
+            GameLog.post("[스태프] 주급을 주지 못해 " + worst.getName() + " " + worst.getRole() + "가 떠났어요.");
+            total = getStaffWeeklyCost();
+        }
+        if (total > 0 && spendGold(total)) GameLog.post("[스태프] 스태프 주급 " + total + "G를 지급했어요.");
+    }
+
+    // ---------- 경기 통계 / 상대 전적 ----------
+
+    public synchronized void addMatchStat(MatchStat m) {
+        matchStats.add(m);
+        while (matchStats.size() > 400) matchStats.remove(0);
+    }
+
+    public synchronized List<MatchStat> getMatchStats() { return new ArrayList<>(matchStats); }
+
+    /** 대회 개인전에서 컴퓨터 선수를 만났을 때 상대 전적을 남긴다. */
+    public synchronized void recordRivalMatch(Rival r, boolean won, int my, int opp) {
+        String key = RivalRecord.key(r.getName(), r.getNation(), r.getWeapon());
+        RivalRecord rec = rivalRecords.get(key);
+        if (rec == null) {
+            rec = new RivalRecord(r.getName(), r.getNation(), r.getWeapon(), day);
+            rivalRecords.put(key, rec);
+        }
+        rec.add(won, my, opp, day);
+    }
+
+    public synchronized RivalRecord getRivalRecord(Rival r) {
+        return rivalRecords.get(RivalRecord.key(r.getName(), r.getNation(), r.getWeapon()));
+    }
+
+    public synchronized List<RivalRecord> getRivalRecords() {
+        List<RivalRecord> list = new ArrayList<>(rivalRecords.values());
+        list.sort((a, b) -> a.games() != b.games() ? b.games() - a.games() : b.lastDay - a.lastDay);
+        return list;
     }
 
     // ---------- 선수 ----------
@@ -158,6 +320,15 @@ public class GameState implements Serializable {
             msg = eq.equipMessage(target, old);
         } else {
             msg = item.use(target);
+            if (item instanceof Food && getNutritionLevel() > 0) {   // 영양사: 식단 효과가 커진다
+                Food food = (Food) item;
+                double k = 0.1 * getNutritionLevel();
+                int extraN = (int) Math.round(food.getNutrition() * k), extraM = (int) Math.round(food.getMoodBonus() * k);
+                if (extraN > 0 || extraM > 0) {
+                    target.eat(extraN, extraM);
+                    msg += " (영양사 보너스: 배고픔 -" + extraN + ", 기분 +" + extraM + ")";
+                }
+            }
         }
         progressMissions(Mission.Type.USE_ITEM, null, 1);
         return msg;
@@ -175,7 +346,7 @@ public class GameState implements Serializable {
 
     /** 날씨와 훈련장 레벨이 반영된 외부 배율 */
     public synchronized double getTrainingMultiplier() {
-        return weather.getTrainingModifier() * (1 + 0.05 * trainingHallLevel);
+        return weather.getTrainingModifier() * (1 + 0.05 * trainingHallLevel) * (1 + getCoachBonus());
     }
 
     public long getTrainingDurationMinutes(Fencer f) {
@@ -290,7 +461,7 @@ public class GameState implements Serializable {
     public synchronized int getClinicLevel() { return clinicLevel; }
 
     /** 의무실 레벨에 따른 휴식 보너스 */
-    public synchronized int getRestBonus() { return clinicLevel * 3; }
+    public synchronized int getRestBonus() { return clinicLevel * 3 + 2 * staffLevel(Staff.Role.PHYSIO); }
 
     public synchronized int upgradeCost(int level) { return 300 * (level + 1); }
 
@@ -416,6 +587,26 @@ public class GameState implements Serializable {
         return world;
     }
 
+    /** 새 게임 첫 화면에서 도움말을 보여줘야 하면 true (한 번 확인하면 다시 false) */
+    public synchronized boolean consumeShowGuide() {
+        boolean v = showGuide;
+        showGuide = false;
+        return v;
+    }
+
+    /** 내 선수들의 소속 국가 코드 */
+    public synchronized String getNation() {
+        return FencingWorld.isNation(nation) ? nation : "KOR";
+    }
+
+    /** 소속 국가를 바꾼다. 그 나라의 국내 선수가 채워지고, 자국 선수권 이름과 랭킹이 따라 바뀐다. */
+    public synchronized void setNation(String code) {
+        if (!FencingWorld.isNation(code)) return;
+        nation = code;
+        getWorld().ensureNation(code, RANDOM);
+        Region.setHomeNation(code);
+    }
+
     public synchronized List<MedalRecord> getMedals() {
         return new ArrayList<>(medals);
     }
@@ -424,7 +615,7 @@ public class GameState implements Serializable {
     public synchronized List<RankEntry> getRanking(WeaponType w) {
         List<RankEntry> all = new ArrayList<>();
         for (Rival r : getWorld().getRivals(w)) all.add(new RankEntry(r));
-        for (Fencer f : roster) if (f.getWeapon() == w) all.add(new RankEntry(f));
+        for (Fencer f : roster) if (f.getWeapon() == w) all.add(new RankEntry(f, getNation()));
         all.sort((a, b) -> Double.compare(b.rating, a.rating));
         for (int i = 0; i < all.size(); i++) all.get(i).rank = i + 1;
         return all;
@@ -445,6 +636,13 @@ public class GameState implements Serializable {
     /** 대회에 나갈 수 있는지. 나갈 수 있으면 null, 없으면 이유를 돌려준다. */
     public synchronized String canEnter(Region r, WeaponType w, List<Fencer> team) {
         if (!r.isUnlocked(getWins(w))) return "잠김: " + w.getDisplayName() + "부 " + r.getRequiredWins() + "승 필요 (지금 " + getWins(w) + "승)";
+        if (r.isTournament()) {   // 시즌 캘린더: 대회 기간에만 출전할 수 있다.
+            if (SeasonCalendar.current(r, day) == null) {
+                SeasonCalendar.Event nx = SeasonCalendar.next(r, day);
+                return "대회 기간이 아니에요" + (nx == null ? "" : " (다음 대회: " + nx.getPeriodText() + ", " + (nx.start - day) + "일 뒤)");
+            }
+            if (hasEntered(r, w)) return "이번 대회에는 이미 출전했어요. (다음 대회를 기다려요)";
+        }
         if (r == Region.OLYMPIC) {
             int rank = bestRank(w, team);
             if (rank == 0 || rank > 8) return "파워 랭킹 8위 이내만 출전 가능 (지금 " + (rank == 0 ? "-" : rank + "위") + ")";
@@ -477,7 +675,7 @@ public class GameState implements Serializable {
             }
         }
         if (medal > 0) {
-            medals.add(new MedalRecord(day, r, w, medal, t.isTeam(), t.getMe().name));
+            medals.add(new MedalRecord(day, r, w, medal, t.isTeam(), t.getMe().name, t.getMe().nation));
             int bonusWins = medal == 1 ? 2 : 1;   // 메달은 승리 수로 쳐서 다음 대회가 열리는 데 도움이 된다.
             wins += bonusWins;
             winsByWeapon.merge(w, bonusWins, Integer::sum);
@@ -547,6 +745,13 @@ public class GameState implements Serializable {
         in.defaultReadObject();
         if (history == null) history = new ArrayList<>();       // 기록/의뢰가 없던 예전 저장 파일
         if (medals == null) medals = new ArrayList<>();         // 메달/세계가 없던 예전 저장 파일
+        if (staff == null) staff = new ArrayList<>();           // 스태프·통계·상대 전적·시즌 기록이 없던 예전 저장 파일
+        if (candidates == null) candidates = new ArrayList<>();
+        if (matchStats == null) matchStats = new ArrayList<>();
+        if (rivalRecords == null) rivalRecords = new LinkedHashMap<>();
+        if (enteredEvents == null) enteredEvents = new HashSet<>();
+        if (!FencingWorld.isNation(nation)) nation = "KOR";    // 소속 국가가 없던 예전 저장 파일
+        Region.setHomeNation(nation);
         if (missions == null) {
             missions = new ArrayList<>();
             generateMissions();

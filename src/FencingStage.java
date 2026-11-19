@@ -600,9 +600,12 @@ public class FencingStage extends JPanel {
         g.setFont(getFont().deriveFont(Font.BOLD, 14f));
         g.setColor(new Color(110, 170, 255));
         g.drawString("우리 팀", bx + 18, by + 24);
+        String ln = battle == null ? null : battle.getLeftNation(), rn = battle == null ? null : battle.getRightNation();
+        if (ln != null) FlagArt.draw(g, ln, bx + 18 + g.getFontMetrics().stringWidth("우리 팀") + 6, by + 11, 21, 14);   // 소속 국가 국기
         g.setColor(new Color(255, 130, 130));
         String foe = "상대";
         g.drawString(foe, bx + bw - 18 - g.getFontMetrics().stringWidth(foe), by + 24);
+        if (rn != null) FlagArt.draw(g, rn, bx + bw - 18 - g.getFontMetrics().stringWidth(foe) - 27, by + 11, 21, 14);
 
         g.setFont(getFont().deriveFont(Font.BOLD, pulse ? 42f : 38f));
         String score = pScore + "  :  " + eScore;

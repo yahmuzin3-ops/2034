@@ -26,6 +26,10 @@ public class Food extends Item {
         return null;
     }
 
+    public int getNutrition() { return nutrition; }
+
+    public int getMoodBonus() { return moodBonus; }
+
     @Override
     public String getTypeName() {
         return "식단";

@@ -4,10 +4,10 @@ import java.util.List;
 import java.util.Random;
 
 /**
- * 토너먼트(한국 선수권 / 세계 선수권 / 올림픽).
+ * 토너먼트(자국 선수권 / 세계 선수권 / 올림픽).
  *
  * [개인전]
- *  - 한국 선수권: 16명, 세계 선수권: 32명 -> 4명씩 풀(예선): 풀 안에서 모두와 5점 경기, 풀 상위 2명이 본선 진출
+ *  - 자국 선수권: 16명, 세계 선수권: 32명 -> 4명씩 풀(예선): 풀 안에서 모두와 5점 경기, 풀 상위 2명이 본선 진출
  *  - 본선: 시드를 배정한 토너먼트(8강 또는 16강부터), 15점 경기(3분 x 3피리어드). 승자만 올라간다.
  *  - 올림픽: 예선 없이 16명이 시드 순으로 곧바로 토너먼트, 준결승 패자끼리 동메달 결정전
  *  - 세계 선수권은 준결승에서 진 두 선수가 모두 동메달(공동 3위)
@@ -99,6 +99,7 @@ public class Tournament implements Serializable {
     private boolean meOut;
     private int placement;
     private final List<String> log = new ArrayList<>();
+    private transient GameState state;   // 상대 전적과 스태프 효과를 쓰기 위한 참조 (저장하지 않는다)
 
     private Tournament(Region region, WeaponType weapon, boolean team, int teamSize, int startDay) {
         this.region = region;
@@ -110,21 +111,23 @@ public class Tournament implements Serializable {
 
     public static Tournament create(GameState state, Region region, WeaponType weapon, List<Fencer> mine) {
         Tournament t = new Tournament(region, weapon, mine.size() >= 2, mine.size(), state.getDay());
-        t.build(state.getWorld(), new ArrayList<>(mine));
+        t.state = state;
+        t.build(state.getWorld(), state.getNation(), new ArrayList<>(mine));
+        t.revengeNotes();
         return t;
     }
 
     // ---------- 만들기 ----------
 
-    private void build(FencingWorld world, List<Fencer> mine) {
-        String myName = team ? "우리 팀 (KOR)" : mine.get(0).getName() + " (KOR)";
-        me = new Entry(myName, "KOR", null, mine);
+    private void build(FencingWorld world, String home, List<Fencer> mine) {
+        String myName = team ? "우리 팀 (" + home + ")" : mine.get(0).getName() + " (" + home + ")";
+        me = new Entry(myName, home, null, mine);
         entries.add(me);
         if (!team) {
             List<Rival> field;
             switch (region) {
                 case NATIONAL:
-                    field = world.koreanField(weapon, 15, R);
+                    field = world.homeField(home, weapon, 15, R);
                     usesPool = true;
                     deSize = 8;
                     break;
@@ -148,10 +151,10 @@ public class Tournament implements Serializable {
             usesPool = false;
             deSize = 8;
             if (region == Region.NATIONAL) {
-                List<List<Rival>> teams = world.koreanTeams(weapon, 7, teamSize, R);
-                for (int i = 0; i < teams.size(); i++) entries.add(new Entry("클럽 " + (char) ('A' + i) + "팀 (KOR)", "KOR", teams.get(i), null));
+                List<List<Rival>> teams = world.homeTeams(home, weapon, 7, teamSize, R);
+                for (int i = 0; i < teams.size(); i++) entries.add(new Entry("클럽 " + (char) ('A' + i) + "팀 (" + home + ")", home, teams.get(i), null));
             } else {
-                List<List<Rival>> teams = world.nationTeams(weapon, 7, teamSize, region == Region.OLYMPIC, R);
+                List<List<Rival>> teams = world.nationTeams(home, weapon, 7, teamSize, region == Region.OLYMPIC, R);
                 for (List<Rival> t : teams) {
                     String nation = t.get(0).getNation();
                     entries.add(new Entry(FencingWorld.nationName(nation) + " 대표팀 (" + nation + ")", nation, t, null));
@@ -253,6 +256,11 @@ public class Tournament implements Serializable {
 
     /** 내 경기를 직접 치른 결과를 반영한다. */
     public void recordPlayerMatch(Match m, int myScore, int oppScore, boolean won) {
+        if (!won && myScore >= oppScore) {   // 점수가 앞서다 기권한 경우: 상대가 목표 점수를 채운 몰수패로 기록한다
+            int total = team ? 5 * teamSize * teamSize : m.target;
+            oppScore = total;
+            myScore = Math.min(myScore, total - 1);
+        }
         boolean meIsA = m.a == me;
         m.sa = meIsA ? myScore : oppScore;
         m.sb = meIsA ? oppScore : myScore;
@@ -264,8 +272,12 @@ public class Tournament implements Serializable {
         double k = team ? 12 : (m.pool ? 14 : 20);
         for (Fencer f : me.players) f.applyRating(oppRating, won, k);
         for (Rival r : opp.rivals) r.applyElo(myBefore, !won, team ? 12 : 16);
+        if (state != null && !team && opp.rivals != null && opp.rivals.size() == 1) {   // 개인전 상대 전적
+            state.recordRivalMatch(opp.rivals.get(0), won, myScore, oppScore);
+        }
+        int physio = state == null ? 0 : state.getPhysioMatchHeal();   // 트레이너가 있으면 경기 사이 회복이 커진다
         for (Fencer f : me.players) {   // 경기 사이 휴식
-            f.heal(25);
+            f.heal(25 + physio);
             f.addFatigue(-10);
         }
         addLog((won ? "승리 " : "패배 ") + myScore + " : " + oppScore + "  vs " + opp.name + "  (" + m.round + (m.bronze ? ", 동메달 결정전" : "") + ")");
@@ -458,6 +470,8 @@ public class Tournament implements Serializable {
         o.rewards = false;
         o.rated = false;
         o.title = getTitle() + " " + m.round + (m.bronze ? " (동메달 결정전)" : "");
+        o.leftNation = me.nation;
+        o.rightNation = m.other(me).nation;
         if (!team) {
             o.target = m.target;
             o.periods = m.pool ? 1 : 3;
@@ -538,6 +552,28 @@ public class Tournament implements Serializable {
     public List<List<Match>> getRounds() { return rounds; }
     public Match getBronze() { return bronze; }
     public List<String> getLog() { return log; }
+
+    /** 이 상대와의 지난 전적 (개인전). 처음이면 빈 문자열 */
+    public String headToHead(Entry opp) {
+        if (state == null || team || opp.rivals == null || opp.rivals.size() != 1) return "";
+        RivalRecord rec = state.getRivalRecord(opp.rivals.get(0));
+        if (rec == null) return "첫 대결";
+        return "상대 전적 " + rec.recordText() + " (" + rec.status() + ")";
+    }
+
+    /** 지난 대회에서 진 상대가 이번 대회에 나오면 복수전 알림을 남긴다. */
+    private void revengeNotes() {
+        if (state == null || team) return;
+        for (Entry e : entries) {
+            if (e == me || e.rivals == null || e.rivals.size() != 1) continue;
+            RivalRecord rec = state.getRivalRecord(e.rivals.get(0));
+            if (rec != null && !rec.lastWon) {
+                addLog("복수전 상대: " + e.name + " - 지난번 " + rec.lastMy + " : " + rec.lastOpp + " 패배 (" + rec.recordText() + ")");
+            } else if (rec != null && rec.games() >= 3) {
+                addLog("라이벌 출전: " + e.name + " - " + rec.recordText());
+            }
+        }
+    }
     public int getStartDay() { return startDay; }
 
     /** 내가 속한 풀 (예선이 없으면 null) */

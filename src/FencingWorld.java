@@ -8,12 +8,13 @@ import java.util.Map;
 import java.util.Random;
 
 /**
- * 펜싱 세계: 종목마다 한국 선수와 세계 각국 선수들이 살고 있다.
- * 대회 출전 선수 명단(한국 선수권 / 세계 선수권 / 올림픽)과 단체전 팀을 여기서 만든다.
+ * 펜싱 세계: 종목마다 세계 각국 선수들이 살고 있다. 내 선수의 소속 국가(기본 한국)는 고를 수 있다.
+ * 대회 출전 선수 명단(자국 선수권 / 세계 선수권 / 올림픽)과 단체전 팀을 여기서 만든다.
  */
 public class FencingWorld implements Serializable {
     private static final long serialVersionUID = 1L;
     private static final int KOREANS = 32;
+    private static final int HOME_DEPTH = 32;   // 소속 국가로 고른 나라는 선수가 이만큼 있도록 채워진다.
     private static final int PER_NATION = 7;
 
     /** 국가 코드 -> {국가 이름, 실력 평균(환산 레벨)} */
@@ -85,16 +86,56 @@ public class FencingWorld implements Serializable {
         return n == null ? code : (String) n[0];
     }
 
+    /** 대회 이름 등에 쓰는 짧은 국가 이름 (한국, 프랑스 ...) */
+    public static String shortName(String code) {
+        return "KOR".equals(code) ? "한국" : nationName(code);
+    }
+
+    public static List<String> nationCodes() {
+        return new ArrayList<>(NATIONS.keySet());
+    }
+
+    public static boolean isNation(String code) {
+        return code != null && NATIONS.containsKey(code);
+    }
+
+    /** 국내 대회와 세계 대회의 난이도 느낌: 그 나라의 펜싱 수준 */
+    public static String levelLabel(String code) {
+        Object[] n = NATIONS.get(code);
+        if (n == null) return "보통";
+        double mu = (Double) n[1];
+        return mu <= 8.5 ? "쉬움" : mu <= 11.5 ? "보통" : "어려움";
+    }
+
+    /**
+     * 소속 국가로 고른 나라의 선수 수를 채운다. 국내 선수권에 나올 국내 선수가 충분해야 하기 때문이다.
+     * 한국은 처음부터 충분하다. 새로 채워지는 선수는 그 나라 대표급보다 조금 약한 실력이다.
+     */
+    public synchronized void ensureNation(String code, Random rnd) {
+        Object[] n = NATIONS.get(code);
+        if (n == null) return;
+        double mu = (Double) n[1];
+        for (WeaponType w : WeaponType.values()) {
+            List<Rival> list = rivals.get(w);
+            int have = 0;
+            for (Rival r : list) if (code.equals(r.getNation())) have++;
+            for (int i = have; i < HOME_DEPTH; i++) {
+                double level = Math.max(1, Math.min(RatingSystem.MAX_LEVEL, Math.max(4.0, mu - 3.0) + rnd.nextGaussian() * 3.5));
+                Personality p = Personality.values()[rnd.nextInt(Personality.values().length)];
+                list.add(new Rival(makeName(code, rnd, list), code, w, p, RatingSystem.ratingForLevel(level)));
+            }
+        }
+    }
+
     public synchronized List<Rival> getRivals(WeaponType w) {
         return new ArrayList<>(rivals.get(w));
     }
 
-    private List<Rival> sortedByRating(WeaponType w, boolean koreanOnly, boolean foreignOnly) {
+    private List<Rival> sortedByRating(WeaponType w, String onlyNation, String excludeNation) {
         List<Rival> list = new ArrayList<>();
         for (Rival r : rivals.get(w)) {
-            boolean kor = "KOR".equals(r.getNation());
-            if (koreanOnly && !kor) continue;
-            if (foreignOnly && kor) continue;
+            if (onlyNation != null && !onlyNation.equals(r.getNation())) continue;
+            if (excludeNation != null && excludeNation.equals(r.getNation())) continue;
             list.add(r);
         }
         list.sort((a, b) -> Double.compare(b.getRating(), a.getRating()));
@@ -103,21 +144,21 @@ public class FencingWorld implements Serializable {
 
     // ---------- 대회 출전 선수 ----------
 
-    /** 한국 선수권: 한국 선수 n명 (실력 상위권에서 뽑는다) */
-    public synchronized List<Rival> koreanField(WeaponType w, int n, Random rnd) {
-        List<Rival> pool = sortedByRating(w, true, false);
+    /** 자국 선수권: 소속 국가 선수 n명 (실력 상위권에서 뽑는다) */
+    public synchronized List<Rival> homeField(String nation, WeaponType w, int n, Random rnd) {
+        List<Rival> pool = sortedByRating(w, nation, null);
         return pick(pool.subList(0, Math.min(pool.size(), n + 8)), n, rnd);
     }
 
     /** 세계 선수권: 세계 상위 선수 중에서 n명 */
     public synchronized List<Rival> worldField(WeaponType w, int n, Random rnd) {
-        List<Rival> pool = sortedByRating(w, false, false);
+        List<Rival> pool = sortedByRating(w, null, null);
         return pick(pool.subList(0, Math.min(pool.size(), n + 24)), n, rnd);
     }
 
     /** 올림픽: 세계 랭킹 상위 n명 */
     public synchronized List<Rival> topField(WeaponType w, int n) {
-        List<Rival> pool = sortedByRating(w, false, false);
+        List<Rival> pool = sortedByRating(w, null, null);
         return new ArrayList<>(pool.subList(0, Math.min(pool.size(), n)));
     }
 
@@ -127,9 +168,9 @@ public class FencingWorld implements Serializable {
         return new ArrayList<>(copy.subList(0, Math.min(n, copy.size())));
     }
 
-    /** 한국 선수권 단체전: 클럽 팀 count 개 (한국 선수로만 구성) */
-    public synchronized List<List<Rival>> koreanTeams(WeaponType w, int count, int teamSize, Random rnd) {
-        List<Rival> pool = sortedByRating(w, true, false);
+    /** 자국 선수권 단체전: 클럽 팀 count 개 (소속 국가 선수로만 구성) */
+    public synchronized List<List<Rival>> homeTeams(String nation, WeaponType w, int count, int teamSize, Random rnd) {
+        List<Rival> pool = sortedByRating(w, nation, null);
         int need = count * teamSize;
         List<Rival> chosen = pick(pool.subList(0, Math.min(pool.size(), need + 6)), need, rnd);
         chosen.sort((a, b) -> Double.compare(b.getRating(), a.getRating()));
@@ -144,10 +185,10 @@ public class FencingWorld implements Serializable {
         return teams;
     }
 
-    /** 세계 선수권 / 올림픽 단체전: 각국 대표팀 (한국 제외). 나라마다 그 나라 최고 선수들로 구성한다. */
-    public synchronized List<List<Rival>> nationTeams(WeaponType w, int count, int teamSize, boolean olympic, Random rnd) {
+    /** 세계 선수권 / 올림픽 단체전: 각국 대표팀 (내 소속 국가 제외). 나라마다 그 나라 최고 선수들로 구성한다. */
+    public synchronized List<List<Rival>> nationTeams(String homeNation, WeaponType w, int count, int teamSize, boolean olympic, Random rnd) {
         Map<String, List<Rival>> byNation = new LinkedHashMap<>();
-        for (Rival r : sortedByRating(w, false, true)) byNation.computeIfAbsent(r.getNation(), k -> new ArrayList<>()).add(r);
+        for (Rival r : sortedByRating(w, null, homeNation)) byNation.computeIfAbsent(r.getNation(), k -> new ArrayList<>()).add(r);
         List<List<Rival>> teams = new ArrayList<>();
         for (List<Rival> list : byNation.values()) {
             if (list.size() >= teamSize) teams.add(new ArrayList<>(list.subList(0, teamSize)));

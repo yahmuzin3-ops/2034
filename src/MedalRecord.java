@@ -10,6 +10,12 @@ public class MedalRecord implements Serializable {
     private final int rank;       // 1 금, 2 은, 3 동
     private final boolean team;
     private final String who;     // 선수/팀 이름
+    private String nation;        // 그때의 소속 국가 (예전 저장 파일에는 없다)
+
+    public MedalRecord(int day, Region region, WeaponType weapon, int rank, boolean team, String who, String nation) {
+        this(day, region, weapon, rank, team, who);
+        this.nation = nation;
+    }
 
     public MedalRecord(int day, Region region, WeaponType weapon, int rank, boolean team, String who) {
         this.day = day;
@@ -26,6 +32,7 @@ public class MedalRecord implements Serializable {
     public int getRank() { return rank; }
     public boolean isTeam() { return team; }
     public String getWho() { return who; }
+    public String getNation() { return nation == null ? "KOR" : nation; }
 
     public String getMedalName() { return rank == 1 ? "금메달" : rank == 2 ? "은메달" : "동메달"; }
 }

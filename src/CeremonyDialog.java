@@ -25,7 +25,11 @@ public class CeremonyDialog extends JDialog {
             bronze.append(e.name);
         }
         names[2] = bronze.length() == 0 ? "-" : bronze.toString();
-        CeremonyPanel panel = new CeremonyPanel(t.getTitle(), t.getMedal(), names, t.getMyFencers(), t.getWeapon(),
+        String[] nations = new String[3];
+        nations[0] = t.getChampion() == null ? null : t.getChampion().nation;
+        nations[1] = t.getRunnerUp() == null ? null : t.getRunnerUp().nation;
+        nations[2] = t.getBronzeEntries().isEmpty() ? null : t.getBronzeEntries().get(0).nation;
+        CeremonyPanel panel = new CeremonyPanel(t.getTitle(), t.getMedal(), names, nations, t.getMyFencers(), t.getWeapon(),
                 t.isTeam(), t.getRegion() == Region.OLYMPIC);
         setLayout(new BorderLayout());
         add(panel, BorderLayout.CENTER);
@@ -58,6 +62,7 @@ public class CeremonyDialog extends JDialog {
         private final String title;
         private final int medal;              // 1 금, 2 은, 3 동
         private final String[] names;         // 금, 은, 동 순서
+        private final String[] nations;       // 금, 은, 동 순서의 국가 코드 (없으면 null)
         private final List<Fencer> mine;
         private final WeaponType weapon;
         private final boolean team, olympic;
@@ -67,6 +72,11 @@ public class CeremonyDialog extends JDialog {
         private long t0;
 
         public CeremonyPanel(String title, int medal, String[] names, List<Fencer> mine, WeaponType weapon, boolean team, boolean olympic) {
+            this(title, medal, names, null, mine, weapon, team, olympic);
+        }
+
+        public CeremonyPanel(String title, int medal, String[] names, String[] nations, List<Fencer> mine, WeaponType weapon, boolean team, boolean olympic) {
+            this.nations = nations;
             this.title = title;
             this.medal = medal;
             this.names = names;
@@ -142,7 +152,7 @@ public class CeremonyDialog extends JDialog {
             drawRays(g, w, el);
 
             // 시상대: 은(왼쪽) 금(가운데) 동(오른쪽)
-            int baseY = h - 40, bw = 170;
+            int baseY = h - 62, bw = 170;
             int[] hs = {120, 78, 52};                       // 금, 은, 동 높이
             int[] xs = {w / 2 - bw / 2, w / 2 - bw / 2 - bw - 6, w / 2 + bw / 2 + 6};
             Color[] cs = {new Color(235, 190, 60), new Color(190, 196, 210), new Color(195, 130, 70)};
@@ -161,7 +171,9 @@ public class CeremonyDialog extends JDialog {
                 int tw = g.getFontMetrics().stringWidth(nm);
                 g.setColor(i == medal - 1 ? new Color(255, 236, 150) : new Color(210, 215, 235));
                 g.drawString(nm, xs[i] + bw / 2 - tw / 2, baseY + 18);
+                if (nations != null && nations[i] != null) FlagArt.draw(g, nations[i], xs[i] + bw / 2 - 17, baseY + 25, 34, 22);   // 이름 아래 국기
             }
+            if (nations != null && nations[medal - 1] != null) drawFlagPole(g, w, h, baseY, el);
 
             // 선수들: 내 선수는 자기 단상 위에서 세리머니, 나머지는 서 있다
             for (int i = 0; i < 3; i++) {
@@ -210,6 +222,21 @@ public class CeremonyDialog extends JDialog {
             String sub = title;
             g.drawString(sub, (w - g.getFontMetrics().stringWidth(sub)) / 2, 92);
             g.dispose();
+        }
+
+        /** 시상대 옆 깃대: 메달을 딴 나라의 국기가 올라간다. */
+        private void drawFlagPole(Graphics2D g, int w, int h, int baseY, long el) {
+            int px = w - 74, top = 110, bottom = baseY;
+            g.setColor(new Color(190, 196, 215));
+            g.setStroke(new BasicStroke(4f));
+            g.draw(new Line2D.Double(px, top, px, bottom));
+            g.setColor(new Color(245, 205, 80));
+            g.fill(new Ellipse2D.Double(px - 5, top - 9, 10, 10));
+            double q = Math.max(0, Math.min(1, (el - 1200) / 2600.0));
+            double ease = 1 - Math.pow(1 - q, 3);
+            double raise = medal == 1 ? 1.0 : medal == 2 ? 0.7 : 0.45;
+            double fy = bottom - 34 - (bottom - top - 40) * raise * ease;
+            FlagArt.drawWaving(g, nations[medal - 1], px + 3, fy, 56, 36, el);
         }
 
         /** 메달이 위에서 떨어져 선수 목에 걸린다. */
